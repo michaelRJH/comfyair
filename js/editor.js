@@ -3,12 +3,13 @@
 import { html, useState, useEffect, useRef, useMemo } from '../vendor/preact-htm.js';
 import { Icon, TopBar, Section, Sheet, ask, toast } from './ui.js';
 import { SECTIONS, setIn, checkJob } from './forms.js';
-import { JOB_TYPES } from './schema.js';
+import { JOB_TYPES, MAKES } from './schema.js';
 import { getJob, saveJob, deleteJob, duplicateJob, rememberFromJob, getSettings } from './store.js';
 import { buildPdf, loadPdfLib } from './pdf.js';
 import { renderPreview, shareAny, shareEmail, shareWhatsApp, saveFile, openFile } from './share.js';
 import { debounce, fmtDate, vibrate } from './util.js';
 import { go, cameFrom } from './router.js';
+import { addManyToList } from './lists.js';
 
 export function Editor({ id, settings }) {
   const [job, setJob] = useState(null);
@@ -86,6 +87,11 @@ export function Editor({ id, settings }) {
     setJob(done);
     await saveJob(done);
     await rememberFromJob(done);
+    // remember makes and materials so they're suggested next time
+    const d = done.data || {};
+    const makes = [d.make, d.unit && d.unit.make, ...((d.units || []).map((u) => u.make))].filter(Boolean);
+    if (makes.length) await addManyToList('makes', makes, MAKES);
+    if (d.materials) await addManyToList('materials', d.materials.map((m) => m.item));
     vibrate(25);
     go(`/job/${job.id}/send`, { done: job.status !== 'complete' ? 1 : 0 });
   };

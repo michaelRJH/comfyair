@@ -1,7 +1,8 @@
 // The job forms. Each returns a list of sections for the editor to lay out.
 
 import { html, useState } from '../vendor/preact-htm.js';
-import { Icon, Input, TextArea, Suggest, Segmented, Toggle, Field, Chips, Stepper, Sheet, ask } from './ui.js';
+import { Icon, Input, TextArea, Suggest, Segmented, Toggle, Field, Chips, Stepper, Sheet, Select, AddInline, ask, toast } from './ui.js';
+import { useList, merge, addToList, useCustomHazards, saveCustomHazard } from './lists.js';
 import { ClientSite, TimeBlock, Photos, SignatureBox, MaterialsList, NextService } from './components.js';
 import {
   SERVICE_TYPES, VRF_JOB_TYPES, COMPLETION, UNIT_TYPES, MAKES, GASES, PIPE_SIZES, CHECK_STATUSES,
@@ -19,16 +20,7 @@ export function setIn(obj, path, value) {
   return base;
 }
 
-export function Select({ label, value, options, onChange, wide }) {
-  return html`<${Field} label=${label} wide=${wide}>
-    <span class="inp inp--select">
-      <select value=${value} onChange=${(e) => onChange(e.currentTarget.value)}>
-        ${options.map((o) => html`<option value=${o}>${o}</option>`)}
-      </select>
-      <${Icon} name="down" size=${18} class="inp__chev" />
-    </span>
-  </${Field}>`;
-}
+export { Select };
 
 // ---------- shared sections ----------
 
@@ -71,28 +63,62 @@ const signSection = (job, set, { nextService = true } = {}) => ({
 
 // ---------- checklist ----------
 
-function Checklist({ list, checks, onChange }) {
-  const setOne = (id, patch) => onChange({ ...checks, [id]: { ...checks[id], ...patch } });
-  return html`<ol class="checks">
-    ${list.map((c) => {
-      const v = checks[c.id] || { status: '', note: '' };
-      const tone = v.status === 'Fail' ? 'bad' : v.status === 'N/A' ? 'na' : v.status ? 'good' : '';
-      return html`<li class=${'check' + (tone ? ' check--' + tone : '')} key=${c.id}>
-        <div class="check__label">${c.label}</div>
-        <div class="check__opts" role="radiogroup" aria-label=${c.label}>
-          ${CHECK_STATUSES.map((st) => html`<button type="button" role="radio" aria-checked=${v.status === st}
-            class=${'pill' + (v.status === st ? ' is-on pill--' + (st === 'Fail' ? 'bad' : st === 'N/A' ? 'na' : 'good') : '')}
-            onClick=${() => { vibrate(); setOne(c.id, { status: v.status === st ? '' : st }); }}>${st}</button>`)}
-        </div>
-        ${(v.status === 'Fail' || v.note) && html`<input class="check__note" placeholder="What did you find?"
-          value=${v.note} onInput=${(e) => setOne(c.id, { note: e.currentTarget.value })} aria-label="Note" />`}
-      </li>`;
-    })}
-  </ol>`;
+const statusTone = (st) => (st === 'Fail' ? 'bad' : st === 'N/A' ? 'na' : !st ? '' : CHECK_STATUSES.includes(st) ? 'good' : 'custom');
+
+// Check list with your own results ("Other") and your own extra checks ("Add a check").
+function Checklist({ list, checks, onChange, extra = [], onExtra, listKey }) {
+  const statuses = merge(CHECK_STATUSES, useList('checkStatus'));
+  const remembered = useList(listKey);
+  const [addingStatus, setAddingStatus] = useState(null);
+  const [addingCheck, setAddingCheck] = useState(false);
+  const all = [...list, ...extra.map((e) => ({ ...e, extra: true }))];
+  const setOne = (id, patch) => onChange({ ...checks, [id]: { status: '', note: '', ...checks[id], ...patch } });
+  const dl = 'dl-' + listKey;
+  const offered = remembered.filter((r) => !all.some((c) => c.label.toLowerCase() === r.toLowerCase()));
+  const addCheck = async (text) => {
+    const label = await addToList(listKey, text, list.map((c) => c.label));
+    onExtra([...extra, { id: 'x-' + uid(), label }]);
+    setAddingCheck(false);
+  };
+  return html`<div class="stack stack--tight">
+    <ol class="checks">
+      ${all.map((c) => {
+        const v = checks[c.id] || { status: '', note: '' };
+        const tone = statusTone(v.status);
+        const opts = merge(statuses, v.status ? [v.status] : []);
+        return html`<li class=${'check' + (tone ? ' check--' + tone : '')} key=${c.id}>
+          <div class="check__label">${c.label}
+            ${c.extra && html`<button type="button" class="check__remove" aria-label=${'Remove check: ' + c.label}
+              onClick=${() => onExtra(extra.filter((e) => e.id !== c.id))}><${Icon} name="x" size=${16} /></button>`}
+          </div>
+          <div class="check__opts" role="radiogroup" aria-label=${c.label}>
+            ${opts.map((st) => html`<button type="button" role="radio" aria-checked=${v.status === st}
+              class=${'pill' + (v.status === st ? ' is-on pill--' + statusTone(st) : '')}
+              onClick=${() => { vibrate(); setOne(c.id, { status: v.status === st ? '' : st }); }}>${st}</button>`)}
+            ${addingStatus !== c.id && html`<button type="button" class="pill addpill" onClick=${() => setAddingStatus(c.id)}>
+              <${Icon} name="plus" size=${15} stroke=${2.2} />Other</button>`}
+          </div>
+          ${addingStatus === c.id && html`<${AddInline} placeholder="Your own result, e.g. Topped up"
+            onCancel=${() => setAddingStatus(null)}
+            onAdd=${async (t) => { const st = await addToList('checkStatus', t, CHECK_STATUSES); setOne(c.id, { status: st }); setAddingStatus(null); }} />`}
+          ${(v.status === 'Fail' || v.note) && html`<input class="check__note" placeholder="What did you find?"
+            value=${v.note} onInput=${(e) => setOne(c.id, { note: e.currentTarget.value })} aria-label="Note" />`}
+        </li>`;
+      })}
+    </ol>
+    ${addingCheck
+      ? html`<${AddInline} placeholder="Describe the check" list=${dl} onAdd=${addCheck} onCancel=${() => setAddingCheck(false)} />`
+      : html`<button type="button" class="addrow" onClick=${() => setAddingCheck(true)}><${Icon} name="plus" size=${18} /> Add a check</button>`}
+    ${offered.length > 0 && !addingCheck && html`<span class="chips chips--recent">
+      <span class="chips__label">Used before</span>
+      ${offered.slice(0, 6).map((t) => html`<button type="button" class="chip chip--small" onClick=${() => addCheck(t)}><${Icon} name="plus" size=${14} stroke=${2.2} />${t}</button>`)}
+    </span>`}
+    <datalist id=${dl}>${offered.map((t) => html`<option value=${t} />`)}</datalist>
+  </div>`;
 }
 
 const allPass = (list, checks, status = 'Pass') =>
-  Object.fromEntries(list.map((c) => [c.id, { ...(checks[c.id] || {}), status: checks[c.id]?.status || status }]));
+  Object.fromEntries(list.map((c) => [c.id, { note: '', ...(checks[c.id] || {}), status: checks[c.id]?.status || status }]));
 
 // ---------- SERVICE SHEET ----------
 
@@ -103,7 +129,7 @@ export function serviceSections(job, { set, patch, engineers }) {
     {
       id: 'job', nav: 'Job', title: 'Job details',
       body: html`<${JobDetails} job=${job} set=${set} engineers=${engineers} extra=${html`
-        <${Segmented} label="Visit type" options=${SERVICE_TYPES} value=${d.serviceType} onChange=${(v) => sd('serviceType', v)} small />
+        <${Segmented} label="Visit type" options=${SERVICE_TYPES} listKey="serviceTypes" value=${d.serviceType} onChange=${(v) => sd('serviceType', v)} small />
         <div class="toggles field--wide">
           <${Toggle} label="Emergency" checked=${d.emergency} onChange=${(v) => sd('emergency', v)} />
           <${Toggle} label="Under warranty" checked=${d.warranty} onChange=${(v) => sd('warranty', v)} />
@@ -116,12 +142,12 @@ export function serviceSections(job, { set, patch, engineers }) {
     {
       id: 'unit', nav: 'Unit', title: 'Unit',
       body: html`<div class="grid2">
-        <${Suggest} label="Make" value=${d.unit.make} options=${MAKES} onChange=${(v) => sd('unit', { ...d.unit, make: v })} />
+        <${Suggest} label="Make" value=${d.unit.make} options=${MAKES} listKey="makes" onChange=${(v) => sd('unit', { ...d.unit, make: v })} />
         <${Input} label="Model" value=${d.unit.model} onChange=${(v) => sd('unit', { ...d.unit, model: v })} />
         <${Input} label="Serial number" value=${d.unit.serial} onChange=${(v) => sd('unit', { ...d.unit, serial: v })} />
         <${Input} label="Unit number" value=${d.unit.unitNo} placeholder="If labelled" onChange=${(v) => sd('unit', { ...d.unit, unitNo: v })} />
         <${Input} label="Unit location" value=${d.unit.location} placeholder="e.g. Server room" onChange=${(v) => sd('unit', { ...d.unit, location: v })} wide />
-        <${Segmented} label="Refrigerant" options=${['R32', 'R410A', 'R22', 'R407C', 'Other']} value=${d.unit.gas} onChange=${(v) => sd('unit', { ...d.unit, gas: v })} small />
+        <${Segmented} label="Refrigerant" options=${GASES} listKey="gases" value=${d.unit.gas} onChange=${(v) => sd('unit', { ...d.unit, gas: v })} small />
       </div>`,
     },
     {
@@ -131,16 +157,17 @@ export function serviceSections(job, { set, patch, engineers }) {
           placeholder="e.g. Noisy pump on the indoor unit. Swapped for a new pump. Tested, all working."
           onChange=${(v) => sd('workDone', v)} />
         <${Field} label="Materials used" wide group><${MaterialsList} items=${d.materials} onChange=${(v) => sd('materials', v)} /></${Field}>
-        <${Segmented} label="Job status" options=${COMPLETION} value=${d.completion} onChange=${(v) => sd('completion', v)} />
+        <${Segmented} label="Job status" options=${COMPLETION} listKey="completion" value=${d.completion} onChange=${(v) => sd('completion', v)} />
         <${TextArea} label="Recommendations or further work" value=${d.recommendations} rows=${2}
           placeholder="Optional, e.g. Outdoor unit casing corroding, quote to follow" onChange=${(v) => sd('recommendations', v)} />
       </div>`,
     },
     {
       id: 'checks', nav: 'Checks', title: 'Check list',
-      aside: html`<button class="link" onClick=${() => { vibrate(); sd('checks', allPass(SERVICE_CHECKS, d.checks)); }}>Mark rest as Pass</button>`,
+      aside: html`<button class="link" onClick=${() => { vibrate(); sd('checks', { ...d.checks, ...allPass([...SERVICE_CHECKS, ...(d.extraChecks || [])], d.checks) }); }}>Mark rest as Pass</button>`,
       body: html`<div class="stack">
-        <${Checklist} list=${SERVICE_CHECKS} checks=${d.checks} onChange=${(v) => sd('checks', v)} />
+        <${Checklist} list=${SERVICE_CHECKS} checks=${d.checks} onChange=${(v) => sd('checks', v)}
+          extra=${d.extraChecks || []} onExtra=${(v) => sd('extraChecks', v)} listKey="serviceChecks" />
         <${Input} label="Running temperatures" value=${d.runningTemp} suffix="°C" inputmode="decimal" placeholder="e.g. 7"
           onChange=${(v) => sd('runningTemp', v)} />
       </div>`,
@@ -153,8 +180,13 @@ export function serviceSections(job, { set, patch, engineers }) {
 
 // ---------- MULTI-UNIT / VRF ----------
 
+const QUICK = ['Cleaned', 'Pump working', 'Filters replaced'];
+
 function UnitCard({ u, i, onChange, onRemove, onCopy }) {
   const s = (k, v) => onChange({ ...u, [k]: v });
+  const quick = merge(QUICK, useList('quickComments'));
+  const [adding, setAdding] = useState(false);
+  const addPhrase = (t) => s('comment', u.comment ? (u.comment.toLowerCase().includes(t.toLowerCase()) ? u.comment : u.comment + ', ' + t.charAt(0).toLowerCase() + t.slice(1)) : t);
   return html`<div class="unit">
     <div class="unit__head">
       <span class="unit__num">${i + 1}</span>
@@ -163,18 +195,20 @@ function UnitCard({ u, i, onChange, onRemove, onCopy }) {
       <button type="button" class="iconbtn iconbtn--muted" onClick=${onRemove} aria-label="Remove unit"><${Icon} name="trash" size=${19} /></button>
     </div>
     <div class="grid2">
-      <${Suggest} label="Make" value=${u.make} options=${MAKES} onChange=${(v) => s('make', v)} />
+      <${Suggest} label="Make" value=${u.make} options=${MAKES} listKey="makes" onChange=${(v) => s('make', v)} />
       <${Input} label="Indoor model" value=${u.model} onChange=${(v) => s('model', v)} />
       <${Input} label="Location" value=${u.location} placeholder="e.g. Reception" onChange=${(v) => s('location', v)} />
-      <${Select} label="Unit type" value=${u.type} options=${UNIT_TYPES} onChange=${(v) => s('type', v)} />
+      <${Select} label="Unit type" value=${u.type} options=${UNIT_TYPES} listKey="unitTypes" onChange=${(v) => s('type', v)} />
       <${Input} label="Comment" value=${u.comment} placeholder="e.g. Cleaned, pump working" onChange=${(v) => s('comment', v)} wide />
       <${Input} label="Temperature" value=${u.temp} suffix="°C" inputmode="decimal" onChange=${(v) => s('temp', v)} />
       <span class="unit__quick field">
         <span class="field__label">Quick add</span>
         <span class="chips">
-          ${['Cleaned', 'Pump working', 'Filters replaced'].map((t) => html`<button type="button" class="chip chip--small"
-            onClick=${() => s('comment', u.comment ? (u.comment.includes(t) ? u.comment : u.comment + ', ' + t.toLowerCase()) : t)}>${t}</button>`)}
+          ${quick.map((t) => html`<button type="button" class="chip chip--small" onClick=${() => { vibrate(); addPhrase(t); }}>${t}</button>`)}
+          ${!adding && html`<button type="button" class="chip chip--small addpill" onClick=${() => setAdding(true)}><${Icon} name="plus" size=${14} stroke=${2.2} />Add phrase</button>`}
         </span>
+        ${adding && html`<${AddInline} placeholder="e.g. Drain flushed" onCancel=${() => setAdding(false)}
+          onAdd=${async (t) => { const v = await addToList('quickComments', t, QUICK); addPhrase(v); setAdding(false); }} />`}
       </span>
     </div>
   </div>`;
@@ -189,7 +223,7 @@ export function vrfSections(job, { set, patch, engineers }) {
     {
       id: 'job', nav: 'Job', title: 'Job details',
       body: html`<${JobDetails} job=${job} set=${set} engineers=${engineers} extra=${html`
-        <${Segmented} label="Job type" options=${VRF_JOB_TYPES} value=${d.jobType} onChange=${(v) => sd('jobType', v)} />
+        <${Segmented} label="Job type" options=${VRF_JOB_TYPES} listKey="vrfJobTypes" value=${d.jobType} onChange=${(v) => sd('jobType', v)} />
         <${Input} label="Location" value=${d.locationDesc} placeholder="e.g. School, whole site" onChange=${(v) => sd('locationDesc', v)} wide />`} />`,
     },
     clientSiteSection(job, set, patch, (saved) =>
@@ -211,16 +245,17 @@ export function vrfSections(job, { set, patch, engineers }) {
     },
     {
       id: 'checks', nav: 'Checks', title: 'Engineer check list',
-      aside: html`<button class="link" onClick=${() => { vibrate(); sd('checks', allPass(VRF_CHECKS, d.checks)); }}>Mark rest as Pass</button>`,
+      aside: html`<button class="link" onClick=${() => { vibrate(); sd('checks', { ...d.checks, ...allPass([...VRF_CHECKS, ...(d.extraChecks || [])], d.checks) }); }}>Mark rest as Pass</button>`,
       body: html`<div class="stack">
-        <${Checklist} list=${VRF_CHECKS} checks=${d.checks} onChange=${(v) => sd('checks', v)} />
+        <${Checklist} list=${VRF_CHECKS} checks=${d.checks} onChange=${(v) => sd('checks', v)}
+          extra=${d.extraChecks || []} onExtra=${(v) => sd('extraChecks', v)} listKey="vrfChecks" />
         <${Input} label="Running temperature range" value=${d.tempRange} suffix="°C" placeholder="e.g. 5 to 49" onChange=${(v) => sd('tempRange', v)} />
       </div>`,
     },
     {
       id: 'notes', nav: 'Notes', title: "Engineer's notes",
       body: html`<div class="stack">
-        <${Segmented} label="Job status" options=${COMPLETION} value=${d.completion} onChange=${(v) => sd('completion', v)} />
+        <${Segmented} label="Job status" options=${COMPLETION} listKey="completion" value=${d.completion} onChange=${(v) => sd('completion', v)} />
         <${TextArea} label="Notes" value=${d.notes} rows=${3} placeholder="e.g. Cleaned and tested all systems on site, all working."
           onChange=${(v) => sd('notes', v)} />
         <${TextArea} label="Recommendations or further work" value=${d.recommendations} rows=${2}
@@ -246,7 +281,7 @@ export function commissioningSections(job, { set, patch, engineers }) {
       id: 'system', nav: 'System', title: 'System information',
       body: html`<div class="stack">
         <div class="grid2">
-          <${Suggest} label="Make" value=${d.make} options=${MAKES} onChange=${(v) => sd('make', v)} wide />
+          <${Suggest} label="Make" value=${d.make} options=${MAKES} listKey="makes" onChange=${(v) => sd('make', v)} wide />
         </div>
         <div class="subhead">Indoor unit</div>
         <div class="grid2">
@@ -270,7 +305,7 @@ export function commissioningSections(job, { set, patch, engineers }) {
     {
       id: 'refrigerant', nav: 'Refrigerant', title: 'Refrigerant',
       body: html`<div class="stack">
-        <${Segmented} label="Type of gas" options=${GASES.slice(0, 5)} value=${d.gasType} onChange=${(v) => sd('gasType', v)} small />
+        <${Segmented} label="Type of gas" options=${GASES} listKey="gases" value=${d.gasType} onChange=${(v) => sd('gasType', v)} small />
         <div class="grid2">
           <${Input} label="Pressure tested to" value=${d.pressureTest} suffix="bar" inputmode="decimal" onChange=${(v) => sd('pressureTest', v)} />
           <${Input} label="Held on vacuum" value=${d.vacuumHrs} suffix="hrs" inputmode="decimal" onChange=${(v) => sd('vacuumHrs', v)} />
@@ -278,8 +313,8 @@ export function commissioningSections(job, { set, patch, engineers }) {
           <${Input} label="Factory charge" value=${d.factoryCharge} suffix="kg" inputmode="decimal" placeholder="From data plate" onChange=${(v) => sd('factoryCharge', v)} />
           <${Input} label="Gas charge added" value=${d.gasAdded} suffix="g" inputmode="decimal" onChange=${(v) => sd('gasAdded', v)} />
           <${Input} label="Pipe length" value=${d.pipeLength} suffix="m" inputmode="decimal" onChange=${(v) => sd('pipeLength', v)} />
-          <${Select} label="Suction pipe" value=${d.suction} options=${PIPE_SIZES} onChange=${(v) => sd('suction', v)} />
-          <${Select} label="Liquid pipe" value=${d.liquid} options=${PIPE_SIZES} onChange=${(v) => sd('liquid', v)} />
+          <${Select} label="Suction pipe" value=${d.suction} options=${PIPE_SIZES} listKey="pipeSizes" onChange=${(v) => sd('suction', v)} />
+          <${Select} label="Liquid pipe" value=${d.liquid} options=${PIPE_SIZES} listKey="pipeSizes" onChange=${(v) => sd('liquid', v)} />
         </div>
         <p class="hint">Pipe sizes in inches.</p>
       </div>`,
@@ -296,8 +331,8 @@ export function commissioningSections(job, { set, patch, engineers }) {
           <${Input} label="Suction pressure" value=${d.suctionPressure} suffix="bar" inputmode="decimal" onChange=${(v) => sd('suctionPressure', v)} />
           <${Input} label="Discharge pressure" value=${d.dischargePressure} suffix="bar" inputmode="decimal" placeholder="Optional" onChange=${(v) => sd('dischargePressure', v)} />
         </div>
-        <${Segmented} label="Drain" options=${['Gravity', 'Pumped']} value=${d.drain} onChange=${(v) => sd('drain', v)} />
-        <${Segmented} label="Supply" options=${['Single phase', '3 phase']} value=${d.phase} onChange=${(v) => sd('phase', v)} />
+        <${Segmented} label="Drain" options=${['Gravity', 'Pumped']} listKey="drain" value=${d.drain} onChange=${(v) => sd('drain', v)} />
+        <${Segmented} label="Supply" options=${['Single phase', '3 phase']} listKey="supply" value=${d.phase} onChange=${(v) => sd('phase', v)} />
         <div class="grid2">
           <${Input} label="Voltage" value=${d.voltage} suffix="V" inputmode="numeric" onChange=${(v) => sd('voltage', v)} />
           <${Input} label="Full load amps" value=${d.flAmps} suffix="A" inputmode="decimal" onChange=${(v) => sd('flAmps', v)} />
@@ -317,6 +352,8 @@ export function commissioningSections(job, { set, patch, engineers }) {
 }
 
 // ---------- RAMS ----------
+
+const STD_KEYS = new Set(HAZARD_LIBRARY.map((h) => h.key));
 
 function HazardCard({ h, i, onChange, onRemove }) {
   const [open, setOpen] = useState(!h.hazard);
@@ -353,18 +390,35 @@ function HazardCard({ h, i, onChange, onRemove }) {
         <div class=${'riskrow__score risk--' + b2.band}><span>${r2}</span><small>${b2.label}</small></div>
       </div>
       ${b2.ok === 'N' && html`<p class="warnline"><${Icon} name="alert" size=${18} /> Residual risk is high. Work should not start until it's brought down.</p>`}
-      <button type="button" class="btn btn--danger-ghost btn--small" onClick=${onRemove}><${Icon} name="trash" size=${18} /> Remove hazard</button>
+      <div class="hz__actions">
+        ${!STD_KEYS.has(h.libKey) && html`<button type="button" class="btn btn--soft btn--small" disabled=${!h.hazard}
+          onClick=${async () => {
+            const key = h.libKey && h.libKey.startsWith('my-') ? h.libKey : 'my-' + uid();
+            await saveCustomHazard(h, key);
+            onChange({ ...h, libKey: key });
+            toast(h.libKey === key ? 'Your saved hazard is updated' : 'Saved to your hazards, ready for next time', { icon: 'check' });
+          }}><${Icon} name="star" size=${18} /> ${h.libKey && h.libKey.startsWith('my-') ? 'Update my saved hazard' : 'Save to my hazards'}</button>`}
+        <button type="button" class="btn btn--danger-ghost btn--small" onClick=${onRemove}><${Icon} name="trash" size=${18} /> Remove hazard</button>
+      </div>
     </div>`}
   </div>`;
 }
 
 function HazardPicker({ open, onClose, existing, onAdd }) {
   const have = new Set(existing.map((h) => h.libKey).filter(Boolean));
+  const mine = useCustomHazards();
   return html`<${Sheet} open=${open} onClose=${onClose} title="Add a hazard" tall>
     <div class="libpick">
       <button type="button" class="libpick__item libpick__item--blank" onClick=${() => { onAdd(blankHazard()); onClose(); }}>
         <span class="libpick__name"><${Icon} name="plus" size=${18} /> Write your own</span>
       </button>
+      ${mine.length > 0 && html`<div class="libpick__group">Your hazards</div>`}
+      ${mine.map((h) => html`<button type="button" class="libpick__item" disabled=${have.has(h.key)}
+        onClick=${() => { onAdd(hazardFromLibrary(h)); onClose(); }}>
+        <span class="libpick__name">${h.hazard}</span>
+        <span class="libpick__meta">${have.has(h.key) ? 'Already added' : h.cause}</span>
+      </button>`)}
+      ${mine.length > 0 && html`<div class="libpick__group">Standard hazards</div>`}
       ${[...HAZARD_LIBRARY].sort((a, b) => have.has(a.key) - have.has(b.key)).map((h) => html`<button type="button" class="libpick__item" disabled=${have.has(h.key)}
         onClick=${() => { onAdd(hazardFromLibrary(h)); onClose(); }}>
         <span class="libpick__name">${h.hazard}</span>
@@ -455,13 +509,13 @@ export function ramsSections(job, { set, patch, engineers }) {
     {
       id: 'controls', nav: 'Controls', title: 'Controls and resources',
       body: html`<div class="stack">
-        <${Chips} label="COSHH sheets for these gases" options=${GASES} value=${ms.gases} onChange=${(v) => sm('gases', v)} />
+        <${Chips} label="COSHH sheets for these gases" options=${GASES} listKey="gases" addLabel="Add gas" value=${ms.gases} onChange=${(v) => sm('gases', v)} />
         <${TextArea} label="Control measures" value=${ms.controls} rows=${4} onChange=${(v) => sm('controls', v)} />
         <${TextArea} label="Permits required" value=${ms.permits} rows=${2} onChange=${(v) => sm('permits', v)} />
         <${TextArea} label="Security" value=${ms.security} rows=${2} onChange=${(v) => sm('security', v)} />
         <${TextArea} label="Operatives" value=${ms.operatives} rows=${2} onChange=${(v) => sm('operatives', v)} />
         <${Input} label="Plant" value=${ms.plant} onChange=${(v) => sm('plant', v)} wide />
-        <${Chips} label="Materials and tools" options=${[...new Set([...MS_TOOLS, ...ms.tools])]} value=${ms.tools} onChange=${(v) => sm('tools', v)} />
+        <${Chips} label="Materials and tools" options=${MS_TOOLS} listKey="tools" addLabel="Add tool" value=${ms.tools} onChange=${(v) => sm('tools', v)} />
         <${TextArea} label="Welfare" value=${ms.welfare} rows=${2} onChange=${(v) => sm('welfare', v)} />
         <${TextArea} label="PPE" value=${ms.ppe} rows=${2} onChange=${(v) => sm('ppe', v)} />
       </div>`,

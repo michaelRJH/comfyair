@@ -25,6 +25,7 @@ Every job has:
 
 It also:
 
+- Lets you **add your own** to any list: gases, visit types, job status, unit types, pipe sizes, check results, quick comments, RAMS tools, extra check list items and hazards. Anything added is remembered on the phone and offered again. Tidy it up in **Settings, Your lists**.
 - Remembers every **site** and the **units** on it. On the next visit, pick the site and all the units load in.
 - Shows **services coming due** on the Home screen when a next service date is set.
 - Works out **risk scores** on the RAMS automatically (severity x probability) and colours them.

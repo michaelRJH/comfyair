@@ -2,6 +2,7 @@
 
 import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { vibrate } from './util.js';
+import { useList, merge, addToList } from './lists.js';
 
 // ---------- icons (24px grid, 1.75 stroke) ----------
 const P = {
@@ -121,11 +122,32 @@ export function TextArea({ label, value, onChange, placeholder, rows = 3, hint }
   </${Field}>`;
 }
 
-// Text box that suggests from a list as you type.
-export function Suggest({ label, value, onChange, options = [], onPick, placeholder, hint, wide, renderOption, inputmode }) {
+// Small inline box for typing your own option, used by every "Other" / "Add" button.
+export function AddInline({ placeholder = 'Type your own', onAdd, onCancel, list }) {
+  const [v, setV] = useState('');
+  const ref = useRef();
+  useEffect(() => { ref.current && ref.current.focus(); }, []);
+  const submit = () => { if (v.trim()) { vibrate(12); onAdd(v.trim()); } };
+  return html`<span class="addinline">
+    <input ref=${ref} value=${v} placeholder=${placeholder} enterkeyhint="done" autocomplete="off" list=${list}
+      aria-label=${placeholder}
+      onInput=${(e) => setV(e.currentTarget.value)}
+      onKeyDown=${(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } if (e.key === 'Escape') onCancel(); }} />
+    <button type="button" class="addinline__ok" disabled=${!v.trim()} onClick=${submit}>Add</button>
+    <button type="button" class="iconbtn iconbtn--muted" onClick=${onCancel} aria-label="Cancel"><${Icon} name="x" size=${18} /></button>
+  </span>`;
+}
+
+const AddPill = ({ onClick, label = 'Other', cls = 'chip' }) => html`<button type="button" class=${cls + ' addpill'} onClick=${onClick}>
+  <${Icon} name="plus" size=${16} stroke=${2.2} />${label}</button>`;
+
+// Text box that suggests from a list as you type. With listKey, things you've added before are suggested too.
+export function Suggest({ label, value, onChange, options = [], onPick, placeholder, hint, wide, renderOption, inputmode, listKey }) {
   const [open, setOpen] = useState(false);
+  const custom = useList(listKey);
+  const all = listKey ? merge(options, custom) : options;
   const q = (value || '').toLowerCase().trim();
-  const list = options
+  const list = all
     .filter((o) => {
       const text = (typeof o === 'string' ? o : o.label).toLowerCase();
       return text !== q && (!q || text.includes(q));
@@ -147,17 +169,25 @@ export function Suggest({ label, value, onChange, options = [], onPick, placehol
   </${Field}>`;
 }
 
-export function Segmented({ label, options, value, onChange, small }) {
+// Pick one. With listKey there's an "Other" button to type your own, which is remembered.
+export function Segmented({ label, options, value, onChange, small, listKey, addLabel = 'Other' }) {
+  const custom = useList(listKey);
+  const [adding, setAdding] = useState(false);
+  const opts = listKey ? merge(options, custom, value ? [value] : []) : options;
+  const wrap = !!listKey || opts.length > 4;
+  const add = async (text) => { const v = await addToList(listKey, text, options); onChange(v); setAdding(false); };
   return html`<${Field} label=${label} wide group>
-    <span class=${'seg' + (small ? ' seg--small' : '') + (options.length > 4 ? ' seg--wrap' : '')} role="radiogroup">
-      ${options.map((o) => {
+    <span class=${'seg' + (small ? ' seg--small' : '') + (wrap ? ' seg--wrap' : '')} role="radiogroup">
+      ${opts.map((o) => {
         const v = typeof o === 'string' ? o : o.value;
         const l = typeof o === 'string' ? o : o.label;
         return html`<button type="button" role="radio" aria-checked=${value === v}
           class=${'seg__opt' + (value === v ? ' is-on' : '')}
           onClick=${() => { vibrate(); onChange(v); }}>${l}</button>`;
       })}
+      ${listKey && !adding && html`<${AddPill} cls="seg__opt seg__opt--add" label=${addLabel} onClick=${() => setAdding(true)} />`}
     </span>
+    ${adding && html`<${AddInline} placeholder=${'Type your own ' + (label || '').toLowerCase()} onAdd=${add} onCancel=${() => setAdding(false)} />`}
   </${Field}>`;
 }
 
@@ -169,14 +199,47 @@ export function Toggle({ label, checked, onChange, hint }) {
   </button>`;
 }
 
-export function Chips({ options, value = [], onChange, label }) {
+// Pick several. With listKey there's an "Add" button to type your own, which is remembered.
+export function Chips({ options, value = [], onChange, label, listKey, addLabel = 'Add' }) {
+  const custom = useList(listKey);
+  const [adding, setAdding] = useState(false);
+  const opts = merge(options, custom, value);
   const toggle = (o) => onChange(value.includes(o) ? value.filter((x) => x !== o) : [...value, o]);
+  const add = async (text) => {
+    const v = await addToList(listKey, text, options);
+    if (!value.includes(v)) onChange([...value, v]);
+    setAdding(false);
+  };
   return html`<${Field} label=${label} wide group>
     <span class="chips">
-      ${options.map((o) => html`<button type="button" class=${'chip' + (value.includes(o) ? ' is-on' : '')}
+      ${opts.map((o) => html`<button type="button" class=${'chip' + (value.includes(o) ? ' is-on' : '')}
         aria-pressed=${value.includes(o)} onClick=${() => { vibrate(); toggle(o); }}>
         ${value.includes(o) && html`<${Icon} name="check" size=${16} stroke=${2.4} />`}${o}</button>`)}
+      ${listKey && !adding && html`<${AddPill} label=${addLabel} onClick=${() => setAdding(true)} />`}
     </span>
+    ${adding && html`<${AddInline} placeholder=${'Type your own'} onAdd=${add} onCancel=${() => setAdding(false)} />`}
+  </${Field}>`;
+}
+
+// Dropdown. With listKey the last option lets you type your own, which is remembered.
+export function Select({ label, value, options, onChange, wide, listKey }) {
+  const custom = useList(listKey);
+  const [adding, setAdding] = useState(false);
+  const opts = listKey ? merge(options, custom, value ? [value] : []) : options;
+  const add = async (text) => { const v = await addToList(listKey, text, options); onChange(v); setAdding(false); };
+  return html`<${Field} label=${label} wide=${wide} group=${!!listKey}>
+    ${adding
+      ? html`<${AddInline} placeholder=${'Type your own'} onAdd=${add} onCancel=${() => setAdding(false)} />`
+      : html`<span class="inp inp--select">
+        <select value=${value} aria-label=${label} onChange=${(e) => {
+          const v = e.currentTarget.value;
+          if (v === '__add__') { e.currentTarget.value = value; setAdding(true); } else onChange(v);
+        }}>
+          ${opts.map((o) => html`<option value=${o}>${o}</option>`)}
+          ${listKey && html`<option value="__add__">Add your own…</option>`}
+        </select>
+        <${Icon} name="down" size=${18} class="inp__chev" />
+      </span>`}
   </${Field}>`;
 }
 

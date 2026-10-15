@@ -119,7 +119,8 @@ function infoGrid(pairs) {
 
 function statusText(st, note) {
   if (!st) return { text: 'Not checked', color: C.na, italics: true };
-  const color = st === 'Fail' ? C.fail : st === 'N/A' ? C.na : C.pass;
+  const standard = ['Pass', 'Cleaned', 'Replaced', 'Adjusted'];
+  const color = st === 'Fail' ? C.fail : st === 'N/A' ? C.na : standard.includes(st) ? C.pass : C.navy;
   return { text: [{ text: st, color, bold: true }, note ? { text: '  ' + note, color: C.ink } : ''] };
 }
 
@@ -247,7 +248,7 @@ function serviceContent(job) {
     });
   }
   if (d.recommendations) out.push(H('Recommendations'), textBox(d.recommendations));
-  out.push(H('Check list'), checklist(SERVICE_CHECKS, d.checks), {
+  out.push(H('Check list'), checklist([...SERVICE_CHECKS, ...(d.extraChecks || [])], d.checks), {
     table: { widths: ['*', 150], body: [[{ text: 'Running temperatures' }, { text: v(d.runningTemp, '°C') || '', bold: true }]] },
     layout: { ...zebra(false), fillColor: () => C.frost },
   });
@@ -287,7 +288,7 @@ function vrfContent(job) {
       layout: zebra(),
     },
     H('Engineer check list'),
-    checklist(VRF_CHECKS, d.checks),
+    checklist([...VRF_CHECKS, ...(d.extraChecks || [])], d.checks),
     {
       table: { widths: ['*', 150], body: [[{ text: 'Running temperature range' }, { text: v(d.tempRange, '°C'), bold: true }]] },
       layout: { ...zebra(false), fillColor: () => C.frost },

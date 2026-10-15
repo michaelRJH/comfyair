@@ -4,6 +4,7 @@ import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Icon, Input, Suggest, Toggle, Sheet, TextArea, Field, toast, ask } from './ui.js';
 import { uid, nowHHMM, minutesBetween, fmtDuration, norm, vibrate, addMonthsISO } from './util.js';
 import { allClients, allSites } from './store.js';
+import { useList } from './lists.js';
 
 // ---------- signature ----------
 
@@ -321,9 +322,11 @@ export function ClientSite({ job, onChange, onLoadUnits }) {
 
 export function MaterialsList({ items, onChange }) {
   const set = (i, patch) => onChange(items.map((m, j) => (j === i ? { ...m, ...patch } : m)));
+  const known = useList('materials');
   return html`<div class="materials">
+    <datalist id="dl-materials">${known.map((t) => html`<option value=${t} />`)}</datalist>
     ${items.map((m, i) => html`<div class="materials__row" key=${m.id}>
-      <input class="materials__item" placeholder="Item, e.g. Condensate pump" value=${m.item} onInput=${(e) => set(i, { item: e.currentTarget.value })} aria-label="Material" />
+      <input class="materials__item" list="dl-materials" placeholder="Item, e.g. Condensate pump" value=${m.item} onInput=${(e) => set(i, { item: e.currentTarget.value })} aria-label="Material" />
       <input class="materials__qty" placeholder="Qty" inputmode="decimal" value=${m.qty} onInput=${(e) => set(i, { qty: e.currentTarget.value })} aria-label="Quantity" />
       <button type="button" class="iconbtn iconbtn--muted" aria-label="Remove item" onClick=${() => onChange(items.filter((_, j) => j !== i))}><${Icon} name="x" size=${18} /></button>
     </div>`)}

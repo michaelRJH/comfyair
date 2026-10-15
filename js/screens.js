@@ -10,8 +10,9 @@ import {
 import { greeting, firstName, fmtLongToday, fmtDate, monthLabel, initials, todayISO, isStandalone, isIOS, norm, uid, safeFileName, vibrate, daysBetween } from './util.js';
 import { go } from './router.js';
 import { saveFile, canShareFiles } from './share.js';
+import { LISTS, removeFromList, removeCustomHazard } from './lists.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 // ---------- shared bits ----------
 
@@ -436,6 +437,8 @@ export function Settings({ settings }) {
           hint="{doc} {site} {tel} {engineer} {jobno} are filled in for you" onChange=${(v) => save({ ...s, emailBody: v })} />
       </section>
 
+      <${YourLists} settings=${settings} />
+
       <section class="setblock">
         <h2 class="setblock__title">Backup</h2>
         <p class="hint">Jobs are stored on this phone only. Send yourself a backup every week or so, and keep it somewhere safe like your email or Google Drive.</p>
@@ -454,6 +457,35 @@ export function Settings({ settings }) {
       </section>
     </div>
   </div>`;
+}
+
+function YourLists({ settings }) {
+  const lists = settings.lists || {};
+  const hazards = settings.customHazards || [];
+  const keys = Object.keys(LISTS).filter((k) => (lists[k] || []).length);
+  const drop = async (key, v) => {
+    if (await ask({ title: `Remove "${v}"?`, body: 'It stops being offered on new jobs. Jobs that already use it keep it.', ok: 'Remove', danger: true })) removeFromList(key, v);
+  };
+  return html`<section class="setblock">
+    <h2 class="setblock__title">Your lists</h2>
+    <p class="hint">Everything you've added with Other, Add or Save to my hazards. It's offered again on every job. Remove any typos here.</p>
+    ${!keys.length && !hazards.length && html`<p class="yourlists__empty">Nothing added yet. Tap Other or Add on any job to put your own option in.</p>`}
+    ${keys.map((k) => html`<div class="yourlist" key=${k}>
+      <span class="yourlist__title">${LISTS[k]}</span>
+      <span class="chips">
+        ${lists[k].map((v) => html`<button type="button" class="chip chip--small chip--remove" aria-label=${'Remove ' + v} onClick=${() => drop(k, v)}>
+          ${v}<${Icon} name="x" size=${14} stroke=${2.2} /></button>`)}
+      </span>
+    </div>`)}
+    ${hazards.length > 0 && html`<div class="yourlist">
+      <span class="yourlist__title">Your hazards</span>
+      <span class="chips">
+        ${hazards.map((h) => html`<button type="button" class="chip chip--small chip--remove" aria-label=${'Remove ' + h.hazard}
+          onClick=${async () => { if (await ask({ title: `Remove "${h.hazard}" from your hazards?`, body: 'RAMS that already include it keep it.', ok: 'Remove', danger: true })) removeCustomHazard(h.key); }}>
+          ${h.hazard}<${Icon} name="x" size=${14} stroke=${2.2} /></button>`)}
+      </span>
+    </div>`}
+  </section>`;
 }
 
 // ---------- first run ----------
