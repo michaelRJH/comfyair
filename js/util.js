@@ -86,6 +86,14 @@ export const minutesBetween = (a, b) => {
   return m;
 };
 
+// Time on site: what was typed in if anything, otherwise worked out from arrived and left.
+export const isManualOnSite = (t) => !!t && (String(t.siteHrs ?? '').trim() !== '' || String(t.siteMins ?? '').trim() !== '');
+export const onSiteMinutes = (t) => {
+  if (!t) return null;
+  if (isManualOnSite(t)) return Math.round((parseFloat(t.siteHrs) || 0) * 60 + (parseFloat(t.siteMins) || 0));
+  return minutesBetween(t.arrived, t.left);
+};
+
 export const fmtDuration = (mins) => {
   if (mins == null || isNaN(mins)) return '';
   const h = Math.floor(mins / 60), m = mins % 60;

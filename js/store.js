@@ -2,7 +2,7 @@
 
 import { db } from './db.js';
 import { COMPANY_DEFAULT, newJob, JOB_TYPES } from './schema.js';
-import { uid, norm, todayISO, daysBetween, clone } from './util.js';
+import { uid, norm, todayISO, daysBetween, clone, onSiteMinutes } from './util.js';
 
 const SETTINGS_KEY = 'settings';
 
@@ -209,14 +209,8 @@ export function jobsCSV(jobs) {
   const rows = [['Job no', 'Date', 'Type', 'Client', 'Site', 'Engineer', 'Arrived', 'Left', 'Hours on site', 'Travel (mins)', 'Miles', 'Status']];
   for (const j of jobs) {
     const t = j.time || {};
-    let hrs = '';
-    if (t.arrived && t.left) {
-      const [ah, am] = t.arrived.split(':').map(Number);
-      const [lh, lm] = t.left.split(':').map(Number);
-      let m = lh * 60 + lm - (ah * 60 + am);
-      if (m < 0) m += 1440;
-      hrs = (m / 60).toFixed(2);
-    }
+    const m = onSiteMinutes(t);
+    const hrs = m != null ? (m / 60).toFixed(2) : '';
     rows.push([
       j.jobNo, j.date, JOB_TYPES[j.type].label, j.client.name, j.site.name || j.site.address, j.engineer,
       t.arrived || '', t.left || '', hrs, t.travelMins || '', t.miles || '', j.status === 'complete' ? 'Complete' : 'Draft',

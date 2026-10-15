@@ -2,7 +2,7 @@
 
 import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Icon, Input, Suggest, Toggle, Sheet, TextArea, Field, toast, ask } from './ui.js';
-import { uid, nowHHMM, minutesBetween, fmtDuration, norm, vibrate, addMonthsISO } from './util.js';
+import { uid, nowHHMM, minutesBetween, fmtDuration, norm, vibrate, addMonthsISO, onSiteMinutes, isManualOnSite } from './util.js';
 import { allClients, allSites } from './store.js';
 import { useList } from './lists.js';
 
@@ -248,8 +248,13 @@ export function Photos({ photos, onChange }) {
 
 export function TimeBlock({ time, onChange }) {
   const set = (patch) => onChange({ ...time, ...patch });
-  const mins = minutesBetween(time.arrived, time.left);
+  const clockMins = minutesBetween(time.arrived, time.left);
+  const manual = isManualOnSite(time);
+  const mins = onSiteMinutes(time);
   const stamp = (k) => { vibrate(15); set({ [k]: nowHHMM() }); };
+  const hint = manual
+    ? (clockMins != null && clockMins !== mins ? `Typed in. The clock times above come to ${fmtDuration(clockMins)}.` : 'Typed in.')
+    : clockMins != null ? 'Worked out from the times above. Type here to change it.' : "Type it in, or use the Arrived and Leaving buttons.";
   return html`<div class="timeblock">
     <div class="timeblock__clock">
       <div class="clock">
@@ -265,9 +270,22 @@ export function TimeBlock({ time, onChange }) {
           : html`<button type="button" class="clock__now" onClick=${() => stamp('left')}><${Icon} name="clock" size=${18} /> Leaving now</button>`}
       </div>
       <div class="clock clock--total">
-        <span class="clock__label">On site</span>
+        <span class="clock__label">On site${manual ? html`<em class="clock__tag">typed</em>` : ''}</span>
         <span class="clock__total">${mins != null ? fmtDuration(mins) : '–'}</span>
       </div>
+    </div>
+    <div class="field field--wide" role="group" aria-label="Time on site">
+      <span class="field__label">Time on site</span>
+      <div class="grid2">
+        <span class="inp inp--suffix"><input inputmode="numeric" aria-label="Hours on site" value=${time.siteHrs ?? ''}
+          placeholder=${!manual && clockMins != null ? String(Math.floor(clockMins / 60)) : '0'}
+          onInput=${(e) => set({ siteHrs: e.currentTarget.value.replace(/[^\d.]/g, '') })} /><span class="inp__suffix">hrs</span></span>
+        <span class="inp inp--suffix"><input inputmode="numeric" aria-label="Minutes on site" value=${time.siteMins ?? ''}
+          placeholder=${!manual && clockMins != null ? String(clockMins % 60) : '0'}
+          onInput=${(e) => set({ siteMins: e.currentTarget.value.replace(/\D/g, '') })} /><span class="inp__suffix">mins</span></span>
+      </div>
+      <span class="field__hint">${hint}
+        ${manual && clockMins != null && html` <button type="button" class="link link--small" onClick=${() => set({ siteHrs: '', siteMins: '' })}>Use clock times</button>`}</span>
     </div>
     <div class="grid2">
       <${Input} label="Travel time" value=${time.travelMins} inputmode="numeric" suffix="mins" onChange=${(v) => set({ travelMins: v })} />

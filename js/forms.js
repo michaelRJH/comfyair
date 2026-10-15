@@ -9,7 +9,7 @@ import {
   SERVICE_CHECKS, VRF_CHECKS, blankUnit, MS_TOOLS, AT_RISK, SEVERITY, PROBABILITY, riskBand,
   HAZARD_LIBRARY, hazardFromLibrary, blankHazard,
 } from './schema.js';
-import { uid, vibrate } from './util.js';
+import { uid, vibrate, onSiteMinutes } from './util.js';
 
 // Immutable deep set: setIn(obj, ['data','unit','make'], 'Daikin')
 export function setIn(obj, path, value) {
@@ -346,6 +346,7 @@ export function commissioningSections(job, { set, patch, engineers }) {
         <${TextArea} label="Notes" value=${d.notes} rows=${2} placeholder="Optional" onChange=${(v) => sd('notes', v)} />
       </div>`,
     },
+    timeSection(job, set),
     photoSection(job, set),
     signSection(job, set),
   ];
@@ -565,7 +566,7 @@ export function checkJob(job) {
   if (job.type === 'service' && !job.data.workDone) w.push('Work carried out is empty');
   if (job.type === 'vrf' && !job.data.units.some((u) => u.model || u.location)) w.push('No units listed');
   if (job.type === 'commissioning' && !job.data.indoor.model) w.push('No indoor unit model');
-  if (job.time && (!job.time.arrived || !job.time.left)) w.push('Arrival or leaving time missing');
+  if (job.time && onSiteMinutes(job.time) == null) w.push('No time on site');
   if (!job.sign.engineer.img) w.push('Engineer has not signed');
   const c = job.sign.customer;
   if (!c.img && !c.unavailable) w.push('Customer has not signed');

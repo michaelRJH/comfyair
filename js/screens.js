@@ -12,7 +12,7 @@ import { go } from './router.js';
 import { saveFile, canShareFiles } from './share.js';
 import { LISTS, removeFromList, removeCustomHazard } from './lists.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 // ---------- shared bits ----------
 

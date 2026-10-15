@@ -3,7 +3,7 @@
 import {
   JOB_TYPES, SERVICE_CHECKS, VRF_CHECKS, AT_RISK, riskBand, SEVERITY, PROBABILITY,
 } from './schema.js';
-import { fmtDateUK, minutesBetween, fmtDuration, safeFileName } from './util.js';
+import { fmtDateUK, fmtDuration, safeFileName, onSiteMinutes } from './util.js';
 
 const C = {
   navy: '#004684',
@@ -194,7 +194,7 @@ function signatures(job) {
 
 function timeRow(job) {
   const t = job.time || {};
-  const mins = minutesBetween(t.arrived, t.left);
+  const mins = onSiteMinutes(t);
   return [
     ['Arrived', v(t.arrived)], ['Left', v(t.left)],
     ['Time on site', mins != null ? fmtDuration(mins) : ''], ['Travel', v(t.travelMins, ' mins')],
