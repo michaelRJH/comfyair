@@ -872,3 +872,12 @@ p { margin: 0; }
 .submit__flags .ic { flex: none; margin-top: 2px; }
 .yardrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .yardrow--site { margin: 2px 0 2px; }
+.toapp--loc { margin: 0; }
+.toapp { display: flex; align-items: center; gap: 12px; margin: 10px 16px 0; padding: 12px 12px 12px 14px; border-radius: 16px; background: var(--navy-tint); text-align: left; box-shadow: inset 0 0 0 1.5px #C5D7EA; }
+.toapp:active:not(:disabled) { transform: scale(.985); }
+.toapp__icon { width: 44px; height: 44px; border-radius: 12px; background: var(--navy); color: #fff; display: grid; place-items: center; flex: none; }
+.toapp__text { flex: 1; display: flex; flex-direction: column; }
+.toapp__text b { color: var(--navy-deep); font-size: 15.5px; }
+.toapp__text small { color: var(--muted); font-size: 12.5px; line-height: 1.3; }
+.toapp__chev { color: var(--navy); }
+.fromtag { display: inline-block; font-size: 11px; font-weight: 700; color: var(--navy); background: var(--navy-tint); padding: 1px 7px; border-radius: 999px; vertical-align: 1px; }

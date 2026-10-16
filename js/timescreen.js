@@ -11,6 +11,7 @@ import {
 } from './timesheet.js';
 import { todayISO, fmtDate, fmtDuration, nowHHMM, firstName, uid, vibrate, minutesBetween } from './util.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
+import { copyText } from './share.js';
 import { go } from './router.js';
 
 // ---------- live clock state ----------
@@ -71,6 +72,29 @@ export function ClockCard({ engineer, compact }) {
       ${compact && html`<button class="btn btn--ghost" onClick=${() => go('/time')} aria-label="Timesheet"><${Icon} name="calendar" size=${18} /> Week</button>`}
     </div>
   </div>`;
+}
+
+// "Where are you?" The engineer taps once and a pin with the time goes to the boss by WhatsApp.
+export function SendLocation({ engineer, toName }) {
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    setBusy(true);
+    vibrate(15);
+    const loc = await stamp();
+    setBusy(false);
+    if (!hasFix(loc)) return toast(statusLabel(loc) + '. Check location is allowed for this app.', { icon: 'alert', ms: 4500 });
+    const when = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const text = `${firstName(engineer)} is here at ${when}: ${mapsLink(loc)}`;
+    try {
+      if (navigator.share) { await navigator.share({ title: 'My location', text }); toast('Sent', { icon: 'check' }); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    (await copyText(text)) ? toast('Location copied, paste it into WhatsApp', { icon: 'check', ms: 4000 }) : window.open(mapsLink(loc), '_blank');
+  };
+  return html`<button class="toapp toapp--loc" disabled=${busy} onClick=${send}>
+    <span class="toapp__icon">${busy ? html`<span class="spinner spinner--small"></span>` : html`<${Icon} name="pin" size=${22} />`}</span>
+    <span class="toapp__text"><b>Send ${toName || 'the boss'} my location</b><small>One tap sends a map pin with the time. Handy when ${toName || 'the boss'} asks "where are you?"</small></span>
+    <${Icon} name="chevron" size=${18} class="toapp__chev" />
+  </button>`;
 }
 
 // ---------- location permission explainer ----------
@@ -205,6 +229,7 @@ export function TimeScreen({ settings }) {
     <${TopBar} title="Time" sub=${firstName(engineer)} />
     <div class="pad stack stack--loose">
       ${intro ? html`<${LocationIntro} onDone=${() => setIntro(false)} />` : html`<${ClockCard} engineer=${engineer} />`}
+      ${!intro && html`<${SendLocation} engineer=${engineer} toName=${pay.toName} />`}
 
       <section class="weekbox">
         <div class="weekbox__nav">

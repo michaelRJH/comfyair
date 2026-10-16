@@ -148,3 +148,32 @@ export async function renderPreview(file, container, { isCancelled = () => false
   }
   return doc.numPages;
 }
+
+// ---------- job files: send a whole job to another Comfyair phone ----------
+
+export function jobFileName(job) {
+  const who = job.client.name || job.site.name || '';
+  return (`Comfyair Job ${job.jobNo}${who ? ' - ' + who : ''}.json`).replace(/[\\/:*?"<>|]+/g, '');
+}
+
+export function jobFile(job, site, fromEngineer) {
+  const data = { app: 'comfyair', kind: 'job', version: 1, exportedAt: new Date().toISOString(), from: fromEngineer || job.engineer || '', job, site: site || null };
+  return new File([JSON.stringify(data)], jobFileName(job), { type: 'application/json' });
+}
+
+// Shares the job file through the phone's share sheet (WhatsApp, email, AirDrop...). Falls back to a download.
+export async function shareJobFile(file, job, toName) {
+  const title = `Job ${job.jobNo} for the Comfyair app`;
+  const text = `Job ${job.jobNo}${job.client.name ? ', ' + job.client.name : ''}. Save this file, then open Comfyair and tap Import a job.`;
+  if (canShareFiles(file)) {
+    try {
+      await navigator.share({ files: [file], title, text });
+      return 'Sent';
+    } catch (e) {
+      if (e && e.name === 'AbortError') return '';
+      throw e;
+    }
+  }
+  saveFile(file);
+  return `Job file saved. Send it to ${toName || 'the boss'} and they tap Import a job`;
+}

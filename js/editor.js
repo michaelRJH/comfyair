@@ -6,7 +6,10 @@ import { SECTIONS, setIn, checkJob } from './forms.js';
 import { JOB_TYPES, MAKES } from './schema.js';
 import { getJob, saveJob, deleteJob, duplicateJob, rememberFromJob, getSettings } from './store.js';
 import { buildPdf, loadPdfLib } from './pdf.js';
-import { renderPreview, shareAny, shareEmail, shareWhatsApp, saveFile, openFile } from './share.js';
+import { renderPreview, shareAny, shareEmail, shareWhatsApp, saveFile, openFile, jobFile, shareJobFile } from './share.js';
+import { getPay } from './timesheet.js';
+import { allSites } from './store.js';
+import { norm } from './util.js';
 import { debounce, fmtDate, vibrate } from './util.js';
 import { go, cameFrom } from './router.js';
 import { addManyToList } from './lists.js';
@@ -233,6 +236,16 @@ export function Send({ id, done, settings }) {
       </button>`)}
     </div>
     ${job && job.sentAt && html`<p class="send__sent"><${Icon} name="check" size=${16} /> Last sent ${fmtDate(new Date(job.sentAt).toISOString().slice(0, 10))}</p>`}
+    ${job && html`<button class="toapp" disabled=${!!busy} onClick=${() => run('toapp', async () => {
+        const sites = await allSites();
+        const key = norm(job.site.address || job.site.name);
+        const site = sites.find((x) => norm(x.address || x.name) === key) || null;
+        return shareJobFile(jobFile(job, site, settings.currentEngineer), job, getPay(settings).toName);
+      })}>
+      <span class="toapp__icon">${busy === 'toapp' ? html`<span class="spinner spinner--small"></span>` : html`<${Icon} name="upload" size=${22} />`}</span>
+      <span class="toapp__text"><b>Send to ${getPay(settings).toName || 'the boss'}'s app</b><small>The whole job, photos and signatures included, so it lands in their Jobs list</small></span>
+      <${Icon} name="chevron" size=${18} class="toapp__chev" />
+    </button>`}
     <div class="preview">
       <div class="preview__head">
         <span class="preview__name">${file ? file.name : t ? `${t.pdfTitle} ${job.jobNo}` : ''}</span>

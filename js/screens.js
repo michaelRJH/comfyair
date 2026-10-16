@@ -4,7 +4,7 @@ import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Icon, TopBar, Input, TextArea, Field, Sheet, Empty, ask, toast } from './ui.js';
 import { JOB_TYPES, TYPE_ORDER, jobTitle } from './schema.js';
 import {
-  allJobs, createJob, servicesDue, allSites, getSite, saveSite, deleteSite, saveSettings,
+  allJobs, createJob, servicesDue, allSites, getSite, saveSite, deleteSite, saveSettings, importJobFile,
   exportBackup, importBackup, jobsCSV, duplicateJob,
 } from './store.js';
 import { greeting, firstName, fmtLongToday, fmtDate, monthLabel, initials, todayISO, isStandalone, isIOS, norm, uid, safeFileName, vibrate, daysBetween } from './util.js';
@@ -15,7 +15,7 @@ import { ClockCard } from './timescreen.js';
 import { getPay, setYardHere } from './timesheet.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.3.0';
+const VERSION = '1.4.0';
 
 // ---------- shared bits ----------
 
@@ -31,7 +31,7 @@ export function JobRow({ job }) {
     <${TypeBadge} type=${job.type} />
     <span class="jobrow__main">
       <span class="jobrow__title">${jobTitle(job)}</span>
-      <span class="jobrow__sub">${where || t.label}</span>
+      <span class="jobrow__sub">${job.importedFrom ? html`<span class="fromtag">from ${job.importedFrom.split(' ')[0]}</span> ` : ''}${where || t.label}</span>
     </span>
     <span class="jobrow__meta">
       <span class="jobrow__no">${job.jobNo}</span>
@@ -190,8 +190,32 @@ const FILTERS = [
   ...TYPE_ORDER.map((k) => ({ id: k, label: JOB_TYPES[k].label })),
 ];
 
+// Reads a job file sent from another phone. Used on the Jobs screen and in Settings.
+export async function importJobFromFiles(fileList, onDone) {
+  const f = fileList && fileList[0];
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (data.app === 'comfyair' && !data.kind && data.jobs) {
+      toast('That is a full backup. Use Restore from a backup in Settings.', { icon: 'alert', ms: 5000 });
+      return;
+    }
+    let r = await importJobFile(data);
+    if (r.exists) {
+      const ok = await ask({ title: `Job ${r.incoming.jobNo} is already on this phone`, body: 'Replace it with the version in this file?', ok: 'Replace' });
+      if (!ok) return;
+      r = await importJobFile(data, { replace: true });
+    }
+    toast(`Job ${r.job.jobNo} added${data.from ? ' from ' + data.from : ''}`, { icon: 'check' });
+    onDone && onDone(r.job);
+  } catch (e) {
+    toast(e.message || 'That file could not be read.', { icon: 'alert', ms: 4500 });
+  }
+}
+
 export function Jobs() {
   const [jobs, setJobs] = useState(null);
+  const importRef = useRef();
   const [q, setQ] = useState('');
   const [f, setF] = useState('all');
   const [sheet, setSheet] = useState(false);
@@ -214,7 +238,9 @@ export function Jobs() {
   }
 
   return html`<div class="screen">
-    <${TopBar} title="Jobs" sub=${jobs ? `${jobs.length} on this phone` : ''} />
+    <${TopBar} title="Jobs" sub=${jobs ? `${jobs.length} on this phone` : ''}
+      right=${html`<button class="iconbtn" aria-label="Import a job" onClick=${() => importRef.current.click()}><${Icon} name="download" /></button>`} />
+    <input type="file" accept="application/json,.json" hidden ref=${importRef} onChange=${(e) => { importJobFromFiles(e.currentTarget.files, () => allJobs().then(setJobs)); e.currentTarget.value = ''; }} />
     <div class="toolbar">
       <label class="searchbox">
         <${Icon} name="search" size=${20} />
@@ -346,6 +372,7 @@ export function Settings({ settings }) {
   const [s, setS] = useState(settings);
   const [stats, setStats] = useState(null);
   const restoreRef = useRef();
+  const jobRef = useRef();
   useEffect(() => { setS(settings); }, [settings]);
   useEffect(() => {
     (async () => {
@@ -459,9 +486,11 @@ export function Settings({ settings }) {
         <div class="setactions">
           <button class="setaction" onClick=${backup}><${Icon} name="upload" /><span><b>Back up everything</b><small>${stats ? `${stats.jobs} jobs` : ''}${mb ? `, ${mb} MB` : ''}</small></span></button>
           <button class="setaction" onClick=${() => restoreRef.current.click()}><${Icon} name="download" /><span><b>Restore from a backup</b><small>Also moves jobs to a new phone</small></span></button>
+          <button class="setaction" onClick=${() => jobRef.current.click()}><${Icon} name="jobs" /><span><b>Import a job</b><small>A job file sent from another engineer's phone</small></span></button>
           <button class="setaction" onClick=${csv}><${Icon} name="sheet" /><span><b>Hours and miles spreadsheet</b><small>Every job with times, travel and mileage, for invoicing</small></span></button>
         </div>
         <input type="file" accept="application/json,.json" hidden ref=${restoreRef} onChange=${(e) => { restore(e.currentTarget.files); e.currentTarget.value = ''; }} />
+        <input type="file" accept="application/json,.json" hidden ref=${jobRef} onChange=${(e) => { importJobFromFiles(e.currentTarget.files, (j) => go('/job/' + j.id + '/send')); e.currentTarget.value = ''; }} />
       </section>
 
       <section class="setblock setblock--about">

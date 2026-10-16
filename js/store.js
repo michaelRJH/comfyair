@@ -185,6 +185,39 @@ export function servicesDue(jobs, withinDays = 60) {
     .sort((a, b) => a.days - b.days);
 }
 
+// ---------- job files from another phone ----------
+
+export async function importJobFile(data, { replace = false } = {}) {
+  if (!data || data.app !== 'comfyair' || data.kind !== 'job' || !data.job) throw new Error('That file is not a Comfyair job.');
+  const job = clone(data.job);
+  const existing = await db.get('jobs', job.id);
+  if (existing && !replace) return { exists: true, job: existing, incoming: job };
+  job.importedFrom = data.from || job.engineer || '';
+  job.importedAt = Date.now();
+  job.sentAt = null;
+  await saveJob(job);
+  // bring the site across with its pin and units, then let the job update it as usual
+  if (data.site && (data.site.address || data.site.name)) {
+    const sites = await allSites();
+    const key = norm(data.site.address || data.site.name);
+    const have = sites.find((x) => norm(x.address || x.name) === key);
+    if (!have) await db.put('sites', { ...clone(data.site), id: uid(), updatedAt: Date.now() });
+    else {
+      const merged = { ...have, pin: have.pin && hasFix(have.pin) ? have.pin : data.site.pin || have.pin, units: [...have.units] };
+      for (const u of data.site.units || []) {
+        const k = norm(`${u.model}|${u.location}`);
+        if (!merged.units.some((x) => norm(`${x.model}|${x.location}`) === k)) merged.units.push({ ...u, id: uid() });
+      }
+      await db.put('sites', merged);
+    }
+  }
+  if (job.status === 'complete') await rememberFromJob(job);
+  // keep the job number counter clear of imported numbers
+  const s = await getSettings();
+  if (Number(job.jobNo) >= Number(s.nextJobNo)) await saveSettings({ ...s, nextJobNo: Number(job.jobNo) + 1 });
+  return { exists: false, job };
+}
+
 // ---------- backup ----------
 
 export async function exportBackup() {

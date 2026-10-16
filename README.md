@@ -25,6 +25,8 @@ Every job has:
 
 It also:
 
+- **Sends whole jobs between phones.** On the finished-job screen, **Send to the boss's app** shares a job file (photos, signatures and location stamps included) by WhatsApp or email. On the other phone, save the file, then tap the import arrow on the Jobs screen (or **Import a job** in Settings) and it lands in the Jobs list, site and units included.
+- **Send my location.** One tap on the Time tab sends a map pin with the time by WhatsApp, for when the boss asks where you are. The app never tracks in the background; for live tracking use a van tracker.
 - **Timesheets with GPS stamps.** The Time tab has Clock in, Break and Clock out. Each tap, and each Arrived and Left on a job sheet, records the phone's location at that moment (never in between). The week view shows hours, jobs and pay, and **Sign and send** makes a timesheet PDF for the boss. The PDF lists where the phone was at every tap, with a map link, and flags anything that doesn't add up: clocked in miles from the first job, "arrived" nowhere near the site, times changed by hand, hours typed that don't match the clock, hours with no job sheets. Rate, overtime and who it goes to are in Settings.
 - Lets you **add your own** to any list: gases, visit types, job status, unit types, pipe sizes, check results, quick comments, RAMS tools, extra check list items and hazards. Anything added is remembered on the phone and offered again. Tidy it up in **Settings, Your lists**.
 - Remembers every **site** and the **units** on it. On the next visit, pick the site and all the units load in.
