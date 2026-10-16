@@ -5,6 +5,7 @@ import { Icon, Input, Suggest, Toggle, Sheet, TextArea, Field, toast, ask } from
 import { uid, nowHHMM, minutesBetween, fmtDuration, norm, vibrate, addMonthsISO, onSiteMinutes, isManualOnSite } from './util.js';
 import { allClients, allSites } from './store.js';
 import { useList } from './lists.js';
+import { stamp, hasFix, statusLabel } from './geo.js';
 
 // ---------- signature ----------
 
@@ -251,7 +252,19 @@ export function TimeBlock({ time, onChange }) {
   const clockMins = minutesBetween(time.arrived, time.left);
   const manual = isManualOnSite(time);
   const mins = onSiteMinutes(time);
-  const stamp = (k) => { vibrate(15); set({ [k]: nowHHMM() }); };
+  // Tapping Arrived / Leaving records the time at once and the phone's location a moment later.
+  const latest = useRef(time);
+  latest.current = time;
+  const stampNow = (k) => {
+    vibrate(15);
+    onChange({ ...latest.current, [k]: nowHHMM(), [k + 'Loc']: { status: 'pending', at: Date.now() }, [k + 'Edited']: false });
+    stamp().then((loc) => onChange({ ...latest.current, [k + 'Loc']: loc }));
+  };
+  const locLine = (loc) => {
+    if (!loc) return null;
+    if (loc.status === 'pending') return html`<span class="clock__loc clock__loc--wait"><span class="spinner spinner--tiny"></span> Getting location</span>`;
+    return html`<span class=${'clock__loc' + (hasFix(loc) ? '' : ' clock__loc--off')}><${Icon} name="pin" size=${13} /> ${hasFix(loc) ? 'Location saved' : statusLabel(loc)}</span>`;
+  };
   const hint = manual
     ? (clockMins != null && clockMins !== mins ? `Typed in. The clock times above come to ${fmtDuration(clockMins)}.` : 'Typed in.')
     : clockMins != null ? 'Worked out from the times above. Type here to change it.' : "Type it in, or use the Arrived and Leaving buttons.";
@@ -260,14 +273,16 @@ export function TimeBlock({ time, onChange }) {
       <div class="clock">
         <span class="clock__label">Arrived</span>
         ${time.arrived
-          ? html`<input class="clock__time" type="time" value=${time.arrived} onInput=${(e) => set({ arrived: e.currentTarget.value })} aria-label="Arrived time" />`
-          : html`<button type="button" class="clock__now" onClick=${() => stamp('arrived')}><${Icon} name="clock" size=${18} /> Arrived now</button>`}
+          ? html`<input class="clock__time" type="time" value=${time.arrived} onInput=${(e) => set({ arrived: e.currentTarget.value, arrivedEdited: true })} aria-label="Arrived time" />`
+          : html`<button type="button" class="clock__now" onClick=${() => stampNow('arrived')}><${Icon} name="clock" size=${18} /> Arrived now</button>`}
+        ${locLine(time.arrivedLoc)}
       </div>
       <div class="clock">
         <span class="clock__label">Left</span>
         ${time.left
-          ? html`<input class="clock__time" type="time" value=${time.left} onInput=${(e) => set({ left: e.currentTarget.value })} aria-label="Left time" />`
-          : html`<button type="button" class="clock__now" onClick=${() => stamp('left')}><${Icon} name="clock" size=${18} /> Leaving now</button>`}
+          ? html`<input class="clock__time" type="time" value=${time.left} onInput=${(e) => set({ left: e.currentTarget.value, leftEdited: true })} aria-label="Left time" />`
+          : html`<button type="button" class="clock__now" onClick=${() => stampNow('left')}><${Icon} name="clock" size=${18} /> Leaving now</button>`}
+        ${locLine(time.leftLoc)}
       </div>
       <div class="clock clock--total">
         <span class="clock__label">On site${manual ? html`<em class="clock__tag">typed</em>` : ''}</span>

@@ -3,7 +3,10 @@
 import {
   JOB_TYPES, SERVICE_CHECKS, VRF_CHECKS, AT_RISK, riskBand, SEVERITY, PROBABILITY,
 } from './schema.js';
-import { fmtDateUK, fmtDuration, safeFileName, onSiteMinutes } from './util.js';
+import { fmtDateUK, fmtDuration, safeFileName, onSiteMinutes, parseISO } from './util.js';
+import { hasFix, describe, mapsLink, statusLabel } from './geo.js';
+import { allSites } from './store.js';
+import { fmtMoney } from './timesheet.js';
 
 const C = {
   navy: '#004684',
@@ -19,6 +22,8 @@ const C = {
   low: '#DDF2E8',
   med: '#FCEBCF',
   high: '#F9D9D5',
+  amber: '#A86200',
+  sky: '#1A78B0',
 };
 
 // ---------- library loading ----------
@@ -192,11 +197,30 @@ function signatures(job) {
   }];
 }
 
+let sitesCache = [];
+function pinFor(job) {
+  const key = (job.site.address || job.site.name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const s = sitesCache.find((x) => (x.address || x.name || '').toLowerCase().replace(/\s+/g, ' ').trim() === key);
+  return s && s.pin && hasFix(s.pin) ? s.pin : null;
+}
+function stampText(t, loc, edited, pin) {
+  if (!t) return '';
+  const parts = [{ text: t }];
+  if (loc && loc.status !== 'pending') {
+    const d = describe(loc, pin, 'site');
+    const color = d.level === 'far' ? C.fail : d.level === 'off' ? C.na : C.muted;
+    parts.push({ text: '  ' + d.text, color, fontSize: 8 });
+    if (hasFix(loc)) parts.push({ text: '  map', link: mapsLink(loc), color: C.sky, fontSize: 8, decoration: 'underline' });
+  }
+  if (edited) parts.push({ text: '  edited', color: C.amber, fontSize: 8 });
+  return { text: parts };
+}
 function timeRow(job) {
   const t = job.time || {};
   const mins = onSiteMinutes(t);
+  const pin = pinFor(job);
   return [
-    ['Arrived', v(t.arrived)], ['Left', v(t.left)],
+    ['Arrived', stampText(t.arrived, t.arrivedLoc, t.arrivedEdited, pin)], ['Left', stampText(t.left, t.leftLoc, t.leftEdited, pin)],
     ['Time on site', mins != null ? fmtDuration(mins) : ''], ['Travel', v(t.travelMins, ' mins')],
     ['Mileage', v(t.miles, ' miles')], ['Engineer', job.engineer],
   ];
@@ -509,12 +533,21 @@ const BUILDERS = { service: serviceContent, vrf: vrfContent, commissioning: comm
 
 export function docDefinition(job, settings) {
   const t = JOB_TYPES[job.type];
+  return shell(settings, {
+    title: t.pdfTitle,
+    subtitle: [{ text: 'Job ' }, { text: job.jobNo || '', bold: true }, { text: '    ' + fmtDateUK(job.date) }],
+    info: { title: `${t.pdfTitle} ${job.jobNo}`, subject: job.client.name },
+    content: BUILDERS[job.type](job),
+  });
+}
+
+function shell(settings, { title, subtitle, info, content }) {
   const co = settings.company;
   const footerLine = [co.address, co.tel && 'Tel: ' + co.tel, co.fgas && 'F-Gas No: ' + co.fgas, co.email].filter(Boolean).join('   |   ');
   return {
     pageSize: 'A4',
     pageMargins: [36, 90, 36, 48],
-    info: { title: `${t.pdfTitle} ${job.jobNo}`, author: co.name, subject: job.client.name, creator: 'Comfyair Job Sheets' },
+    info: { author: co.name, creator: 'Comfyair Job Sheets', ...info },
     header: (page, pages, size) => ({
       margin: [36, 26, 36, 0],
       stack: [
@@ -523,8 +556,8 @@ export function docDefinition(job, settings) {
             { image: logoData, width: 112 },
             {
               stack: [
-                { text: t.pdfTitle, font: 'ArchivoX', fontSize: size.orientation === 'landscape' ? 15 : 13.5, color: C.navy, alignment: 'right', characterSpacing: 0.1 },
-                { text: [{ text: 'Job ' }, { text: job.jobNo || '', bold: true }, { text: '    ' + fmtDateUK(job.date) }], alignment: 'right', fontSize: 9, color: C.muted, margin: [0, 3, 0, 0] },
+                { text: title, font: 'ArchivoX', fontSize: size.orientation === 'landscape' ? 15 : 13.5, color: C.navy, alignment: 'right', characterSpacing: 0.1 },
+                { text: subtitle, alignment: 'right', fontSize: 9, color: C.muted, margin: [0, 3, 0, 0] },
               ],
               margin: [0, 6, 0, 0],
             },
@@ -546,7 +579,7 @@ export function docDefinition(job, settings) {
         { text: `Page ${page} of ${pages}`, fontSize: 7.5, color: C.muted, alignment: 'right', width: 70 },
       ],
     }),
-    content: BUILDERS[job.type](job),
+    content,
     // never leave a section heading stranded at the bottom of a page
     pageBreakBefore: (node, following) => node.headlineLevel === 1 && following.filter((n) => !n.headlineLevel).length < 2,
     defaultStyle: { font: 'Archivo', fontSize: 9.5, color: C.ink, lineHeight: 1.15 },
@@ -569,6 +602,7 @@ export function pdfFileName(job) {
 
 export async function buildPdf(job, settings) {
   const pdfMake = await loadPdfLib();
+  try { sitesCache = await allSites(); } catch (e) { sitesCache = []; }
   const dd = docDefinition(job, settings);
   const blob = await new Promise((resolve, reject) => {
     try {
@@ -578,4 +612,132 @@ export async function buildPdf(job, settings) {
     }
   });
   return new File([blob], pdfFileName(job), { type: 'application/pdf' });
+}
+
+// ---------- timesheet ----------
+
+const fmtShort = (iso) => { const d = parseISO(iso); return d ? `${d.getDate()}/${d.getMonth() + 1}` : ''; };
+
+function timesheetContent(week, ts, pay) {
+  const red = (t) => ({ text: t, color: C.fail, bold: true });
+  const toName = pay.toName || 'Manager';
+  const summary = {
+    columns: [
+      stat('Hours', fmtDuration(week.totalMins) || '0h'),
+      stat('Days', String(week.daysWorked)),
+      stat('Overtime', week.otMins ? fmtDuration(week.otMins) : 'None'),
+      week.payTotal != null ? stat('Pay', fmtMoney(week.payTotal), true) : stat('Flags', String(week.flags.length), week.red > 0),
+    ],
+    columnGap: 10,
+    margin: [0, 0, 0, 4],
+  };
+  function stat(label, value, hi) {
+    return {
+      table: { widths: ['*'], body: [[{ stack: [{ text: label, style: 'k' }, { text: value, font: 'ArchivoX', fontSize: 15, color: hi ? C.orange : C.navyDeep, margin: [0, 3, 0, 0] }], margin: [4, 2, 4, 2] }]] },
+      layout: { ...thin, fillColor: () => C.frost, paddingTop: () => 6, paddingBottom: () => 6 },
+    };
+  }
+
+  const dayRows = week.days.map((d) => {
+    const segs = d.shift ? d.shift.segments : [];
+    const ins = segs.map((g) => g.in.t + (g.in.edited ? '*' : '')).join('\n');
+    const outs = segs.map((g) => (g.out ? g.out.t + (g.out.edited ? '*' : '') : 'open')).join('\n');
+    const jobs = d.jobs.length
+      ? { stack: d.jobs.map((r) => ({ text: [{ text: `${r.job.jobNo}  `, bold: true }, { text: r.where }, r.arrived ? { text: `  ${r.arrived} to ${r.left || '…'}`, color: C.muted } : ''], margin: [0, 0, 0, 2] })) }
+      : { text: d.shift && d.shift.note ? d.shift.note : d.minutes ? 'No job sheets' : '', color: d.minutes && !d.jobs.length && !(d.shift && d.shift.note) ? C.amber : C.muted, italics: true };
+    const flagMark = d.flags.some((f) => f.level === 'red') ? red('!') : d.flags.length ? { text: '!', color: C.amber, bold: true } : '';
+    return [
+      { text: [{ text: d.day + '\n', bold: true }, { text: fmtShort(d.date), color: C.muted, fontSize: 8 }] },
+      { text: ins || '', alignment: 'center' }, { text: outs || '', alignment: 'center' },
+      { text: d.breaks ? fmtDuration(d.breaks) : '', alignment: 'center', color: C.muted },
+      { text: d.minutes ? fmtDuration(d.minutes) : d.date > new Date().toISOString().slice(0, 10) ? '' : '–', alignment: 'center', bold: !!d.minutes },
+      jobs, { text: flagMark, alignment: 'center' },
+    ];
+  });
+  const dayTable = {
+    table: {
+      headerRows: 1, dontBreakRows: true,
+      widths: [36, 40, 40, 36, 42, '*', 12],
+      body: [[th('Day'), th('In', 'center'), th('Out', 'center'), th('Break', 'center'), th('Hours', 'center'), th('Jobs'), th('', 'center')], ...dayRows,
+        [{ text: 'Total', bold: true, colSpan: 4 }, '', '', '', { text: fmtDuration(week.totalMins) || '0h', bold: true, alignment: 'center' },
+          { text: week.rate ? `${fmtDuration(week.stdMins)} at £${week.rate.toFixed(2)}${week.otMins ? ` + ${fmtDuration(week.otMins)} at £${(week.rate * week.mult).toFixed(2)}` : ''}  =  ${fmtMoney(week.payTotal)}` : '', bold: true }, ''],
+      ],
+    },
+    layout: { ...zebra(), fillColor: (row, node) => (row === 0 ? C.navy : row === node.table.body.length - 1 ? C.frost : row % 2 === 0 ? C.frost : null) },
+  };
+
+  const stamps = week.days.flatMap((d) => d.stamps.map((s) => ({ ...s, day: d.day })));
+  const evidence = stamps.length ? {
+    table: {
+      headerRows: 1, dontBreakRows: true,
+      widths: [34, '*', 34, 120, 28],
+      body: [[th('Day'), th('Event'), th('Time', 'center'), th('Where the phone was'), th('')],
+        ...stamps.map((s) => {
+          const lvl = s.note.level;
+          const color = lvl === 'far' ? C.fail : lvl === 'off' ? C.na : lvl === 'close' ? C.amber : C.pass;
+          return [
+            { text: s.day, color: C.muted }, { text: [{ text: s.event }, s.edited ? { text: '  edited by hand', color: C.amber, fontSize: 8 } : ''] },
+            { text: s.t, alignment: 'center' },
+            { text: s.loc && s.loc.status === 'pending' ? 'Not recorded' : s.note.text, color, bold: lvl === 'far' },
+            hasFix(s.loc) ? { text: 'map', link: mapsLink(s.loc), color: C.sky, decoration: 'underline', alignment: 'center' } : '',
+          ];
+        })],
+    },
+    layout: { ...zebra(), paddingTop: () => 3, paddingBottom: () => 3 },
+    fontSize: 8.5,
+  } : { text: 'No location stamps this week.', color: C.na, italics: true };
+
+  const flags = week.flags.length
+    ? { ul: week.flags.map((f) => ({ text: [{ text: f.day + '  ', bold: true }, { text: f.text }], color: f.level === 'red' ? C.fail : C.amber, margin: [0, 0, 0, 2] })), markerColor: C.orange }
+    : { text: [{ text: 'Nothing flagged. ', color: C.pass, bold: true }, { text: 'Every stamp had a location and nothing was changed by hand.', color: C.muted }] };
+
+  return [
+    infoGrid([
+      ['Engineer', week.engineer], ['Week commencing', fmtDateUK(week.weekStart)],
+      ['Submitted', ts ? fmtDateUK(new Date(ts.submittedAt).toISOString().slice(0, 10)) : ''], ['For', toName],
+    ]),
+    { text: '', margin: [0, 5] },
+    summary,
+    H('Hours'),
+    dayTable,
+    { text: '* time entered or changed by hand rather than stamped by a tap', fontSize: 7.5, color: C.muted, margin: [0, 4, 0, 0] },
+    H('Things to check'),
+    flags,
+    H('Where the phone was at each tap'),
+    { text: `Each tap of Clock in, Clock out, Arrived or Left records the phone's position. "At site" means within about a quarter of a mile of the site's saved location. Tap "map" to see the exact spot.`, color: C.muted, fontSize: 8.5, margin: [0, 0, 0, 8] },
+    evidence,
+    {
+      stack: [
+        H('Sign off'),
+        {
+          columns: [
+            sigCell('Engineer', ts ? ts.sign : { name: week.engineer, img: '', at: null }),
+            { stack: [{ text: `Approved by ${toName}`, style: 'k', margin: [0, 0, 0, 4] }, { text: ' ', margin: [0, 22, 0, 0] },
+              { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 220, y2: 0, lineWidth: 0.7, lineColor: C.line }], margin: [0, 2, 0, 4] },
+              { columns: [{ text: 'Signed', fontSize: 8.5, color: C.muted }, { text: 'Date', fontSize: 8.5, color: C.muted, alignment: 'right' }] }] },
+          ],
+          columnGap: 30,
+        },
+      ],
+      unbreakable: true,
+    },
+  ];
+}
+
+export function timesheetFileName(week) {
+  return safeFileName(`Comfyair Timesheet ${week.engineer} w-c ${fmtDateUK(week.weekStart).replace(/\//g, '-')}.pdf`);
+}
+
+export async function buildTimesheetPdf(week, ts, settings, pay) {
+  const pdfMake = await loadPdfLib();
+  const dd = shell(settings, {
+    title: 'Weekly Timesheet',
+    subtitle: [{ text: week.engineer, bold: true }, { text: '    w/c ' + fmtDateUK(week.weekStart) }],
+    info: { title: `Timesheet ${week.engineer} ${week.weekStart}`, subject: week.engineer },
+    content: timesheetContent(week, ts, pay),
+  });
+  const blob = await new Promise((resolve, reject) => {
+    try { pdfMake.createPdf(dd).getBlob((b) => resolve(b)); } catch (e) { reject(e); }
+  });
+  return new File([blob], timesheetFileName(week), { type: 'application/pdf' });
 }

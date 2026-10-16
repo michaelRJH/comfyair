@@ -25,7 +25,7 @@ export function messageFor(job, settings) {
 export function subjectFor(job) {
   const t = JOB_TYPES[job.type];
   const where = job.site.name || job.site.address || job.client.name;
-  return `${t.pdfTitle} ${job.jobNo}${where ? ', ' + where : ''}`;
+  return `${t.pdfTitle}${job.jobNo ? ' ' + job.jobNo : ''}${where ? ', ' + where : ''}`;
 }
 
 async function systemShare(file, { title, text }) {

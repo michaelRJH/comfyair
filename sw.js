@@ -1,7 +1,7 @@
 // Offline support: keeps the whole app on the phone so it works in plant rooms with no signal.
 // Bump VERSION whenever any file changes so phones pick up the update.
 
-const VERSION = 'comfyair-v1.2.0';
+const VERSION = 'comfyair-v1.3.0';
 const FILES = [
   './',
   'index.html',
@@ -21,6 +21,10 @@ const FILES = [
   'js/pdf.js',
   'js/share.js',
   'js/lists.js',
+  'js/geo.js',
+  'js/timesheet.js',
+  'js/timescreen.js',
+  'js/senddoc.js',
   'vendor/preact-htm.js',
   'vendor/pdfmake.min.js',
   'vendor/pdf-fonts.js',

@@ -11,8 +11,11 @@ import { greeting, firstName, fmtLongToday, fmtDate, monthLabel, initials, today
 import { go } from './router.js';
 import { saveFile, canShareFiles } from './share.js';
 import { LISTS, removeFromList, removeCustomHazard } from './lists.js';
+import { ClockCard } from './timescreen.js';
+import { getPay, setYardHere } from './timesheet.js';
+import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 // ---------- shared bits ----------
 
@@ -101,6 +104,9 @@ export function Home({ settings }) {
     </header>
 
     <div class="home__body">
+      <section class="block">
+        <${ClockCard} engineer=${settings.currentEngineer} compact />
+      </section>
       <section class="block">
         <h2 class="block__title">Start a job</h2>
         <div class="starts">
@@ -306,6 +312,12 @@ export function Site({ id }) {
         <a class="btn btn--small btn--soft" href=${'https://maps.google.com/?q=' + encodeURIComponent(site.address)} target="_blank" rel="noopener">Directions</a>
       </div>
       <button class="btn btn--primary btn--block" onClick=${() => setSheet(true)}><${Icon} name="plus" size=${20} /> New job at this site</button>
+      <div class="yardrow yardrow--site">
+        <span class=${'locpill' + (hasFix(site.pin) ? '' : ' locpill--off')}><${Icon} name="pin" size=${13} /> ${hasFix(site.pin) ? `Site location set${site.pin.setFrom === 'arrived' ? ' from first visit' : ''}` : 'No site location yet'}</span>
+        ${hasFix(site.pin) && html`<a class="link" href=${mapsLink(site.pin)} target="_blank" rel="noopener">Map</a>`}
+        <button class="link" onClick=${async () => { const loc = await stamp(); if (!hasFix(loc)) return toast(statusLabel(loc), { icon: 'alert' }); const s2 = { ...site, pin: { ...loc, setFrom: 'manual' } }; await saveSite(s2); setSite(s2); toast('Site location set to here', { icon: 'check' }); }}>${hasFix(site.pin) ? 'Reset to here' : 'Set to here'}</button>
+      </div>
+      <p class="hint">Arrived and Left stamps on jobs here are checked against this spot.</p>
 
       <section class="block">
         <h2 class="block__title">Units on site <span class="count">${site.units.length}</span></h2>
@@ -437,6 +449,8 @@ export function Settings({ settings }) {
           hint="{doc} {site} {tel} {engineer} {jobno} are filled in for you" onChange=${(v) => save({ ...s, emailBody: v })} />
       </section>
 
+      <${PaySettings} settings=${s} save=${save} />
+
       <${YourLists} settings=${settings} />
 
       <section class="setblock">
@@ -457,6 +471,42 @@ export function Settings({ settings }) {
       </section>
     </div>
   </div>`;
+}
+
+function PaySettings({ settings, save }) {
+  const pay = getPay(settings);
+  const set = (k, v) => save({ ...settings, pay: { ...pay, [k]: v } });
+  const [yardBusy, setYardBusy] = useState(false);
+  const yard = async () => {
+    setYardBusy(true);
+    const loc = await setYardHere();
+    setYardBusy(false);
+    toast(hasFix(loc) ? 'Yard location saved' : statusLabel(loc), { icon: hasFix(loc) ? 'check' : 'alert' });
+  };
+  return html`<section class="setblock">
+    <h2 class="setblock__title">Timesheets and pay</h2>
+    <p class="hint">Hours come from Clock in and Clock out on the Time tab. Put a rate in and the timesheet shows the pay as well.</p>
+    <div class="grid2">
+      <${Input} label="Hourly rate" value=${pay.rate} inputmode="decimal" suffix="£/hr" placeholder="Optional" onChange=${(v) => set('rate', v.replace(/[^\d.]/g, ''))} />
+      <${Input} label="Overtime after" value=${pay.otAfter} inputmode="decimal" suffix="hrs/wk" placeholder="None" onChange=${(v) => set('otAfter', v.replace(/[^\d.]/g, ''))} />
+      <${Input} label="Overtime rate" value=${pay.otMult} inputmode="decimal" suffix="x" onChange=${(v) => set('otMult', v.replace(/[^\d.]/g, ''))} />
+      <${Field} label="Week starts"><span class="inp inp--select"><select value=${String(pay.weekStart)} onChange=${(e) => set('weekStart', Number(e.currentTarget.value))}>
+        ${[['1', 'Monday'], ['0', 'Sunday'], ['6', 'Saturday'], ['5', 'Friday']].map(([v, l]) => html`<option value=${v}>${l}</option>`)}</select><${Icon} name="down" size=${18} class="inp__chev" /></span></${Field}>
+    </div>
+    <div class="subhead">Send timesheets to</div>
+    <div class="grid2">
+      <${Input} label="Name" value=${pay.toName} placeholder="e.g. Elliott" onChange=${(v) => set('toName', v)} />
+      <${Input} label="WhatsApp number" type="tel" inputmode="tel" value=${pay.toPhone} onChange=${(v) => set('toPhone', v)} />
+      <${Input} label="Email" type="email" inputmode="email" value=${pay.toEmail} onChange=${(v) => set('toEmail', v)} wide />
+    </div>
+    <div class="subhead">Yard location</div>
+    <p class="hint">Clock in and out stamps are compared to the first and last job of the day, or to the yard when there are no jobs.</p>
+    <div class="yardrow">
+      <span class=${'locpill' + (hasFix(pay.yard) ? '' : ' locpill--off')}><${Icon} name="pin" size=${13} /> ${hasFix(pay.yard) ? 'Yard location set' : 'Not set'}</span>
+      <button class="btn btn--small btn--soft" disabled=${yardBusy} onClick=${yard}>${yardBusy ? 'Locating' : hasFix(pay.yard) ? 'Set to here again' : "Set to where I am now"}</button>
+      ${hasFix(pay.yard) && html`<button class="link" onClick=${() => set('yard', null)}>Clear</button>`}
+    </div>
+  </section>`;
 }
 
 function YourLists({ settings }) {

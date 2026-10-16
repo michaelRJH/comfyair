@@ -3,6 +3,7 @@
 import { db } from './db.js';
 import { COMPANY_DEFAULT, newJob, JOB_TYPES } from './schema.js';
 import { uid, norm, todayISO, daysBetween, clone, onSiteMinutes } from './util.js';
+import { hasFix } from './geo.js';
 
 const SETTINGS_KEY = 'settings';
 
@@ -141,6 +142,9 @@ export async function rememberFromJob(job) {
   site.address = job.site.address || site.address;
   site.clientName = job.client.name || site.clientName;
   site.clientId = client ? client.id : site.clientId;
+  // First good "Arrived" location becomes the site's pin, so later visits can be checked against it.
+  const arrived = job.time && job.time.arrivedLoc;
+  if (!(site.pin && hasFix(site.pin)) && hasFix(arrived)) site.pin = { ...arrived, setFrom: 'arrived', jobId: job.id, date: job.date };
 
   const seen = (u) => ({
     make: u.make || '', model: u.model || '', serial: u.serial || '', location: u.location || '',
@@ -184,10 +188,10 @@ export function servicesDue(jobs, withinDays = 60) {
 // ---------- backup ----------
 
 export async function exportBackup() {
-  const [jobs, clients, sites, settings] = await Promise.all([
-    db.all('jobs'), db.all('clients'), db.all('sites'), getSettings(),
+  const [jobs, clients, sites, settings, shifts, timesheets] = await Promise.all([
+    db.all('jobs'), db.all('clients'), db.all('sites'), getSettings(), db.all('shifts'), db.all('timesheets'),
   ]);
-  return { app: 'comfyair', version: 1, exportedAt: new Date().toISOString(), settings, jobs, clients, sites };
+  return { app: 'comfyair', version: 2, exportedAt: new Date().toISOString(), settings, jobs, clients, sites, shifts, timesheets };
 }
 
 export async function importBackup(data) {
@@ -195,6 +199,8 @@ export async function importBackup(data) {
   await db.putMany('jobs', data.jobs || []);
   await db.putMany('clients', data.clients || []);
   await db.putMany('sites', data.sites || []);
+  await db.putMany('shifts', data.shifts || []);
+  await db.putMany('timesheets', data.timesheets || []);
   const s = await getSettings();
   const highest = Math.max(
     Number(s.nextJobNo) || 0,

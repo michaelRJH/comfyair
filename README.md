@@ -25,6 +25,7 @@ Every job has:
 
 It also:
 
+- **Timesheets with GPS stamps.** The Time tab has Clock in, Break and Clock out. Each tap, and each Arrived and Left on a job sheet, records the phone's location at that moment (never in between). The week view shows hours, jobs and pay, and **Sign and send** makes a timesheet PDF for the boss. The PDF lists where the phone was at every tap, with a map link, and flags anything that doesn't add up: clocked in miles from the first job, "arrived" nowhere near the site, times changed by hand, hours typed that don't match the clock, hours with no job sheets. Rate, overtime and who it goes to are in Settings.
 - Lets you **add your own** to any list: gases, visit types, job status, unit types, pipe sizes, check results, quick comments, RAMS tools, extra check list items and hazards. Anything added is remembered on the phone and offered again. Tidy it up in **Settings, Your lists**.
 - Remembers every **site** and the **units** on it. On the next visit, pick the site and all the units load in.
 - Shows **services coming due** on the Home screen when a next service date is set.
@@ -60,7 +61,9 @@ The app is plain HTML, CSS and JavaScript with no build step. Edit the files and
 | Form fields | `js/forms.js` |
 | PDF layout | `js/pdf.js` |
 | Colours and styling | `css/app.css` |
-| Company details, email message | In the app, Settings |
+| Company details, email message, hourly rate, overtime, who timesheets go to | In the app, Settings |
+| Location rules and distance thresholds | `js/geo.js` |
+| Timesheet flags and pay maths | `js/timesheet.js` |
 
 **After any change, bump `VERSION` at the top of `sw.js`** (for example `comfyair-v1.0.1`). Phones then show "A new version is ready" and update with one tap.
 

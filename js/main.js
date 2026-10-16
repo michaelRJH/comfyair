@@ -7,17 +7,20 @@ import { requestPersistence } from './db.js';
 import { useRoute, go } from './router.js';
 import { Home, Jobs, Sites, Site, Settings, Welcome } from './screens.js';
 import { Editor, Send } from './editor.js';
+import { TimeScreen } from './timescreen.js';
+import { SendTimesheet } from './senddoc.js';
 
 const TABS = [
   { path: '/', label: 'Home', icon: 'home' },
   { path: '/jobs', label: 'Jobs', icon: 'jobs' },
+  { path: '/time', label: 'Time', icon: 'clock' },
   { path: '/sites', label: 'Sites', icon: 'sites' },
   { path: '/settings', label: 'Settings', icon: 'settings' },
 ];
 
 function BottomNav({ path }) {
   const active = path === '/' ? '/' : '/' + path.split('/')[1];
-  const map = { '/site': '/sites', '/job': '/jobs' };
+  const map = { '/site': '/sites', '/job': '/jobs', '/timesheet': '/time' };
   const cur = map[active] || active;
   return html`<nav class="tabbar" aria-label="Main">
     ${TABS.map((t) => html`<button class=${'tabbar__btn' + (cur === t.path ? ' is-on' : '')} aria-current=${cur === t.path ? 'page' : undefined}
@@ -49,6 +52,8 @@ function App() {
   else if (a === 'jobs') screen = html`<${Jobs} />`;
   else if (a === 'job' && b && c === 'send') { screen = html`<${Send} key=${b} id=${b} done=${route.query.done === '1'} settings=${settings} />`; tabs = false; }
   else if (a === 'job' && b) { screen = html`<${Editor} key=${b} id=${b} settings=${settings} />`; tabs = false; }
+  else if (a === 'time') screen = html`<${TimeScreen} settings=${settings} />`;
+  else if (a === 'timesheet' && b && c === 'send') { screen = html`<${SendTimesheet} key=${b} weekStart=${b} done=${route.query.done === '1'} settings=${settings} />`; tabs = false; }
   else if (a === 'sites') screen = html`<${Sites} />`;
   else if (a === 'site' && b) screen = html`<${Site} key=${b} id=${b} />`;
   else if (a === 'settings') screen = html`<${Settings} settings=${settings} />`;

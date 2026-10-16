@@ -53,6 +53,11 @@ export const JOB_TYPES = {
 
 export const TYPE_ORDER = ['service', 'vrf', 'commissioning', 'rams'];
 
+// Not a job, but shares the PDF and sharing machinery.
+JOB_TYPES.timesheet = {
+  id: 'timesheet', label: 'Timesheet', blurb: '', pdfTitle: 'Weekly Timesheet', fileLabel: 'Timesheet', icon: 'clock', tone: 'navy',
+};
+
 export const SERVICE_TYPES = ['Service', 'Call out', 'Repair', 'Installation', 'Survey'];
 export const VRF_JOB_TYPES = ['Service', 'Repair', 'Call out'];
 export const COMPLETION = ['Complete', 'Ongoing', 'Return visit needed'];

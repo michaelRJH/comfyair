@@ -1,8 +1,8 @@
 // Tiny IndexedDB wrapper. Everything lives on the phone.
 
 const DB_NAME = 'comfyair';
-const DB_VERSION = 1;
-const STORES = ['jobs', 'clients', 'sites', 'kv'];
+const DB_VERSION = 2;
+const STORES = ['jobs', 'clients', 'sites', 'kv', 'shifts', 'timesheets'];
 
 let dbPromise;
 
