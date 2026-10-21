@@ -9,6 +9,8 @@ import { Home, Jobs, Sites, Site, Settings, Welcome } from './screens.js';
 import { Editor, Send } from './editor.js';
 import { TimeScreen } from './timescreen.js';
 import { SendTimesheet } from './senddoc.js';
+import { ComfyPopup, useComfyOnce } from './mascot.js';
+import { firstName } from './util.js';
 
 const TABS = [
   { path: '/', label: 'Home', icon: 'home' },
@@ -40,6 +42,7 @@ function App() {
     return onSettings(setSettings);
   }, []);
 
+  const [comfy, hideComfy] = useComfyOnce(settings);
   if (!settings) return html`<div class="boot"><span class="spinner"></span></div>`;
   if (!settings.onboarded || !settings.currentEngineer) {
     return html`<${Welcome} settings=${settings} onDone=${setSettings} /><${ToastHost} />`;
@@ -64,6 +67,7 @@ function App() {
     ${tabs && html`<${BottomNav} path=${route.path} />`}
     <${DialogHost} />
     <${ToastHost} />
+    ${comfy && html`<${ComfyPopup} name=${firstName(settings.currentEngineer)} onClose=${hideComfy} />`}
   </div>`;
 }
 

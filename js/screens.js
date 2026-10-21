@@ -12,10 +12,11 @@ import { go } from './router.js';
 import { saveFile, canShareFiles } from './share.js';
 import { LISTS, removeFromList, removeCustomHazard } from './lists.js';
 import { ClockCard } from './timescreen.js';
+import { ComfyPopup } from './mascot.js';
 import { getPay, setYardHere } from './timesheet.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.4.0';
+const VERSION = '1.4.1';
 
 // ---------- shared bits ----------
 
@@ -373,6 +374,7 @@ export function Settings({ settings }) {
   const [stats, setStats] = useState(null);
   const restoreRef = useRef();
   const jobRef = useRef();
+  const [comfy, setComfy] = useState(false);
   useEffect(() => { setS(settings); }, [settings]);
   useEffect(() => {
     (async () => {
@@ -497,6 +499,8 @@ export function Settings({ settings }) {
         <img src="assets/logo.png" alt="Comfyair" width="120" />
         <p>Job Sheets ${VERSION}${stats && stats.persisted ? ', storage protected' : ''}</p>
         <button class="link" onClick=${() => { if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistration().then((r) => r && r.update()); toast('Checking for updates'); }}>Check for updates</button>
+        <button class="link" onClick=${() => setComfy(true)}>Say hello to Comfy</button>
+        ${comfy && html`<${ComfyPopup} name=${firstName(s.currentEngineer)} onClose=${() => setComfy(false)} />`}
       </section>
     </div>
   </div>`;
