@@ -18,7 +18,7 @@ import { QuotesBlock } from './pipeline.js';
 import { getPay, setYardHere } from './timesheet.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.6.0';
+const VERSION = '1.6.1';
 
 // ---------- shared bits ----------
 

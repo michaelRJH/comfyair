@@ -150,14 +150,24 @@ export function drawUnit3D(ctx, cam, model, x, y, scale, label, opts = {}) {
   return { w, h };
 }
 
-// Trunking: an L-shaped run on the wall from the unit's bottom corner to the end point. 60mm wide, 50mm deep.
-function drawTrunking(ctx, cam, from, to, scale) {
+// Trunking: an L-shaped run on the wall from the nearest bottom corner of the unit to the end point. 60mm wide, 50mm deep.
+// bend 'v' drops down first then runs along; 'h' runs along first then drops.
+export function trunkStart(place) {
+  const [w, h] = MODEL_SIZE[place.model] || MODEL_SIZE['wall-m'];
+  const t = place.trunk;
+  const left = t && t.x < place.x + w / 2;
+  return { x: left ? place.x + 0.06 : place.x + w - 0.06, y: place.y + h };
+}
+function drawTrunking(ctx, cam, from, to, bend, scale) {
   const colours = { front: '#EEF1F4', side: '#D5DDE5', top: '#F7F9FA', bottom: '#C4CDD6' };
   const W = 0.06, D = 0.05;
   const dx = to.x - from.x, dy = to.y - from.y;
-  // horizontal leg then vertical leg
-  if (Math.abs(dx) > W) drawBox(ctx, cam, Math.min(from.x, to.x), from.y - W / 2, Math.abs(dx), W, D, scale, colours);
-  if (Math.abs(dy) > W) drawBox(ctx, cam, to.x - W / 2, Math.min(from.y, to.y), W, Math.abs(dy), D, scale, colours);
+  const horiz = (y, x0, x1) => { if (Math.abs(x1 - x0) > W / 2) drawBox(ctx, cam, Math.min(x0, x1) - W / 2, y - W / 2, Math.abs(x1 - x0) + W, W, D, scale, colours); };
+  const vert = (x, y0, y1) => { if (Math.abs(y1 - y0) > W / 2) drawBox(ctx, cam, x - W / 2, Math.min(y0, y1) - W / 2, W, Math.abs(y1 - y0) + W, D, scale, colours); };
+  if (bend === 'h') { horiz(from.y, from.x, to.x); vert(to.x, from.y, to.y); }
+  else { vert(from.x, from.y, to.y); horiz(to.y, from.x, to.x); }
+  // small end cap where it goes through the wall
+  ctx.save(); const p = cam.project(to.x, to.y, 0.02); ctx.beginPath(); ctx.arc(p.x * scale, p.y * scale, Math.max(2, scale * 14), 0, Math.PI * 2); ctx.fillStyle = '#3A4A5C'; ctx.fill(); ctx.restore();
 }
 
 function roundRect(ctx, x, y, w, h, r) {
@@ -180,7 +190,7 @@ export function renderScene(ctx, place, pw, ph, scale, label, { guide = false } 
     ctx.restore();
   }
   const [w, h] = MODEL_SIZE[place.model] || MODEL_SIZE['wall-m'];
-  if (place.trunk) drawTrunking(ctx, cam, { x: place.x + w * 0.9, y: place.y + h }, place.trunk, scale);
+  if (place.trunk) drawTrunking(ctx, cam, trunkStart(place), place.trunk, place.trunk.bend || 'v', scale);
   drawUnit3D(ctx, cam, place.model, place.x, place.y, scale, label);
   return cam;
 }
@@ -248,7 +258,8 @@ export function OverlayEditor({ photo, model, outdoorModel, label, wall, onDone,
       const cam = renderScene(ctx, place, img.naturalWidth, img.naturalHeight, s, label);
       if (cam && place.trunk) {
         const p = cam.project(place.trunk.x, place.trunk.y);
-        ctx.beginPath(); ctx.arc(p.x * s, p.y * s, 12 * ratio, 0, Math.PI * 2); ctx.fillStyle = '#F79239'; ctx.fill(); ctx.lineWidth = 3 * ratio; ctx.strokeStyle = '#fff'; ctx.stroke();
+        ctx.beginPath(); ctx.arc(p.x * s, p.y * s, 24 * ratio, 0, Math.PI * 2); ctx.fillStyle = 'rgba(247,146,57,.25)'; ctx.fill();
+        ctx.beginPath(); ctx.arc(p.x * s, p.y * s, 11 * ratio, 0, Math.PI * 2); ctx.fillStyle = '#F79239'; ctx.fill(); ctx.lineWidth = 3 * ratio; ctx.strokeStyle = '#fff'; ctx.stroke();
       }
     }
     ctx.restore();
@@ -275,8 +286,17 @@ export function OverlayEditor({ photo, model, outdoorModel, label, wall, onDone,
     } else {
       const wpt = toWall(fr); if (!wpt) return;
       const [w, h] = MODEL_SIZE[place.model] || MODEL_SIZE['wall-m'];
-      if (place.trunk && Math.hypot(wpt.x - place.trunk.x, wpt.y - place.trunk.y) < 0.3) { setDrag({ kind: 'trunk' }); return; }
-      setDrag({ kind: 'unit', off: { x: wpt.x - place.x, y: wpt.y - place.y }, inside: wpt.x >= place.x - 0.2 && wpt.x <= place.x + w + 0.2 && wpt.y >= place.y - 0.2 && wpt.y <= place.y + h + 0.2 });
+      const c = cam(), img = imgRef.current;
+      // the trunking dot is grabbed by screen distance, so it's easy to hit on a phone
+      if (place.trunk && c) {
+        const p = c.project(place.trunk.x, place.trunk.y);
+        const dpx = Math.hypot((p.x / img.naturalWidth - fr.x) * fit.current.w, (p.y / img.naturalHeight - fr.y) * fit.current.h) / (canvasRef.current.width / canvasRef.current.getBoundingClientRect().width);
+        if (dpx < 34) { setDrag({ kind: 'trunk', moved: false }); return; }
+      }
+      const inside = wpt.x >= place.x - 0.15 && wpt.x <= place.x + w + 0.15 && wpt.y >= place.y - 0.15 && wpt.y <= place.y + h + 0.15;
+      if (inside) setDrag({ kind: 'unit', off: { x: wpt.x - place.x, y: wpt.y - place.y } });
+      else if (place.trunk) { vibrate(8); setPlace((p) => ({ ...p, trunk: { ...p.trunk, x: wpt.x, y: wpt.y } })); setDrag({ kind: 'trunk', moved: false }); }
+      else setDrag({ kind: 'none' });
     }
   };
   const move = (e) => {
@@ -286,18 +306,18 @@ export function OverlayEditor({ photo, model, outdoorModel, label, wall, onDone,
       setPlace((p) => ({ ...p, corners: p.corners.map((c, i) => (i === drag.i ? { x: clamp(fr.x, -0.2, 1.2), y: clamp(fr.y, -0.2, 1.2) } : c)) }));
     } else {
       const wpt = toWall(fr); if (!wpt) return;
-      if (drag.kind === 'trunk') setPlace((p) => ({ ...p, trunk: { x: wpt.x, y: wpt.y } }));
-      else {
+      if (drag.kind === 'trunk') setPlace((p) => ({ ...p, trunk: { ...p.trunk, x: clamp(wpt.x, -0.5, p.wallW + 0.5), y: clamp(wpt.y, -0.5, p.wallH + 0.5) } }));
+      else if (drag.kind === 'unit') {
         const [w, h] = MODEL_SIZE[place.model] || MODEL_SIZE['wall-m'];
-        const off = drag.inside ? drag.off : { x: w / 2, y: h / 2 };
-        setPlace((p) => ({ ...p, x: clamp(wpt.x - off.x, -w, p.wallW), y: clamp(wpt.y - off.y, -h, p.wallH) }));
+        setPlace((p) => ({ ...p, x: clamp(wpt.x - drag.off.x, -w, p.wallW), y: clamp(wpt.y - drag.off.y, -h, p.wallH) }));
       }
     }
   };
   const up = () => setDrag(null);
 
   const switchModel = (m) => { vibrate(); setPlace((p) => ({ ...p, model: m, placed: false })); };
-  const toggleTrunk = () => { vibrate(); setPlace((p) => { if (p.trunk) return { ...p, trunk: null }; const [w, h] = MODEL_SIZE[p.model]; return { ...p, trunk: { x: clamp(p.x + w + 0.4, 0, p.wallW), y: clamp(p.y + h + 0.8, 0, p.wallH) } }; }); };
+  const toggleTrunk = () => { vibrate(); setPlace((p) => { if (p.trunk) return { ...p, trunk: null }; const [w, h] = MODEL_SIZE[p.model]; return { ...p, trunk: { x: clamp(p.x + w + 0.5, 0, p.wallW), y: clamp(p.y + h + 0.6, 0, p.wallH), bend: 'v' } }; }); };
+  const flipBend = () => { vibrate(); setPlace((p) => ({ ...p, trunk: { ...p.trunk, bend: p.trunk.bend === 'h' ? 'v' : 'h' } })); };
   const done = async () => { vibrate(15); const url = await flatten(photo.dataUrl, place, label); onDone({ place, url }); };
 
   const models = [{ id: model, label: label || 'Indoor unit' }];
@@ -325,8 +345,9 @@ export function OverlayEditor({ photo, model, outdoorModel, label, wall, onDone,
         <div class="chips">
           ${models.map((m) => html`<button type="button" class=${'chip chip--small' + (place.model === m.id ? ' is-on' : '')} onClick=${() => switchModel(m.id)}>${m.label}</button>`)}
           <button type="button" class=${'chip chip--small' + (place.trunk ? ' is-on' : '')} onClick=${toggleTrunk}><${Icon} name="pen" size=${14} /> Trunking run</button>
+          ${place.trunk && html`<button type="button" class="chip chip--small" onClick=${flipBend}><${Icon} name="refresh" size=${14} /> ${place.trunk.bend === 'h' ? 'Along, then down' : 'Down, then along'}</button>`}
         </div>
-        <p class="ovl__hint">Drag the unit along the ${ceiling ? 'ceiling' : 'wall'}. It's ${(MODEL_SIZE[place.model] || [0.9])[0]}m wide, to scale.${place.trunk ? ' Drag the orange dot to where the pipes go through.' : ''}</p>
+        <p class="ovl__hint">Drag the unit along the ${ceiling ? 'ceiling' : 'wall'}. It's ${(MODEL_SIZE[place.model] || [0.9])[0]}m wide, to scale.${place.trunk ? ' Tap or drag the orange dot to where the pipes go through the wall.' : ''}</p>
       `}
     </div>
   </div>`;
