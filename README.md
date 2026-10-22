@@ -25,6 +25,7 @@ Every job has:
 
 It also:
 
+- **Quote builder.** Survey each room (size, use, glazing, people, equipment) and the app works out the cooling load, picks a unit from your price list in three tiers (Good, Better, Best), prices pipework, trunking, bracket, pump, electrics and labour, and makes a customer-ready quote PDF. Photograph the wall and drag a to-scale drawing of the unit onto it so the customer sees where it goes. Customer picks an option and signs on the phone; one tap then starts the commissioning sheet with the accepted unit filled in. Your prices live in **Settings, Quotes and prices** (it ships with example prices to replace).
 - **Sends whole jobs between phones.** On the finished-job screen, **Send to the boss's app** shares a job file (photos, signatures and location stamps included) by WhatsApp or email. On the other phone, save the file, then tap the import arrow on the Jobs screen (or **Import a job** in Settings) and it lands in the Jobs list, site and units included.
 - **Send my location.** One tap on the Time tab sends a map pin with the time by WhatsApp, for when the boss asks where you are. The app never tracks in the background; for live tracking use a van tracker.
 - **Timesheets with GPS stamps.** The Time tab has Clock in, Break and Clock out. Each tap, and each Arrived and Left on a job sheet, records the phone's location at that moment (never in between). The week view shows hours, jobs and pay, and **Sign and send** makes a timesheet PDF for the boss. The PDF lists where the phone was at every tap, with a map link, and flags anything that doesn't add up: clocked in miles from the first job, "arrived" nowhere near the site, times changed by hand, hours typed that don't match the clock, hours with no job sheets. Rate, overtime and who it goes to are in Settings.
@@ -61,6 +62,8 @@ The app is plain HTML, CSS and JavaScript with no build step. Edit the files and
 | --- | --- |
 | Check list items, hazard library, default RAMS wording | `js/schema.js` |
 | Form fields | `js/forms.js` |
+| Quote builder, cooling load rule of thumb, tiers | `js/quote.js`, `js/quoteforms.js` |
+| Unit drawings placed on photos | `js/overlay.js` |
 | PDF layout | `js/pdf.js` |
 | Colours and styling | `css/app.css` |
 | Company details, email message, hourly rate, overtime, who timesheets go to | In the app, Settings |

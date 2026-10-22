@@ -13,10 +13,11 @@ import { saveFile, canShareFiles } from './share.js';
 import { LISTS, removeFromList, removeCustomHazard } from './lists.js';
 import { ClockCard } from './timescreen.js';
 import { ComfyPopup } from './mascot.js';
+import { PriceSettings } from './quoteforms.js';
 import { getPay, setYardHere } from './timesheet.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.4.1';
+const VERSION = '1.5.0';
 
 // ---------- shared bits ----------
 
@@ -477,6 +478,8 @@ export function Settings({ settings }) {
         <${TextArea} label="Text sent with each PDF" value=${s.emailBody} rows=${6}
           hint="{doc} {site} {tel} {engineer} {jobno} are filled in for you" onChange=${(v) => save({ ...s, emailBody: v })} />
       </section>
+
+      <${PriceSettings} settings=${s} save=${save} />
 
       <${PaySettings} settings=${s} save=${save} />
 

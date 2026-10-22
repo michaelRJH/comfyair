@@ -7,6 +7,7 @@ import { fmtDateUK, fmtDuration, safeFileName, onSiteMinutes, parseISO } from '.
 import { hasFix, describe, mapsLink, statusLabel } from './geo.js';
 import { allSites } from './store.js';
 import { fmtMoney } from './timesheet.js';
+import { TIERS, ROOM_USES, roomLoad, roomKw, priceQuote, fmtGBP, fmtGBP0, getPrice } from './quote.js';
 
 const C = {
   navy: '#004684',
@@ -527,15 +528,153 @@ function ramsContent(job) {
   ];
 }
 
-const BUILDERS = { service: serviceContent, vrf: vrfContent, commissioning: commissioningContent, rams: ramsContent };
+// ---------- quote ----------
+
+let priceCache = null;
+
+function quoteContent(job) {
+  const q = job.data;
+  const price = priceCache || getPrice({});
+  const p = priceQuote(q, price);
+  const offered = p.options.filter((o) => q.offered.includes(o.tier.id));
+  const validUntil = (() => { const d = new Date(job.date); d.setDate(d.getDate() + (parseInt(price.validityDays, 10) || 30)); return d.toISOString().slice(0, 10); })();
+  const accepted = q.accepted.tier ? p.options.find((o) => o.tier.id === q.accepted.tier) : null;
+  const G = '#11785A';
+
+  const out = [];
+  out.push(infoGrid([
+    ['Prepared for', [job.client.name, job.client.contact].filter(Boolean).join(', ')], ['Quote number', job.jobNo],
+    ['Site', [job.site.name, job.site.address].filter(Boolean).join('\n')], ['Date', fmtDateUK(job.date)],
+    ['Surveyed by', job.engineer], ['Valid until', fmtDateUK(validUntil)],
+  ]));
+  if (q.title) out.push({ text: q.title, font: 'ArchivoX', fontSize: 16, color: C.navyDeep, margin: [0, 16, 0, 4] });
+  if (q.summary) out.push({ text: q.summary, lineHeight: 1.35, margin: [0, q.title ? 0 : 14, 0, 0] });
+
+  // Rooms
+  out.push(H('What we surveyed'));
+  out.push({
+    table: {
+      headerRows: 1, dontBreakRows: true,
+      widths: ['*', 46, 48, 52, '*'],
+      body: [[th('Room'), th('Size', 'center'), th('Cooling', 'center'), th('Unit type'), th('Where it goes')],
+        ...p.rooms.map((r) => {
+          const l = roomLoad(r);
+          const use = ROOM_USES.find((x) => x.id === r.use);
+          return [
+            { text: [{ text: r.name, bold: true }, use ? { text: '\n' + use.label, color: C.muted, fontSize: 8 } : ''] },
+            { text: l.area ? `${l.area} m²` : '', alignment: 'center' },
+            { text: `${roomKw(r)} kW`, alignment: 'center', bold: true },
+            { text: r.unitType },
+            { text: [r.indoorSpot, r.outdoorSpot ? 'Outdoor: ' + r.outdoorSpot : ''].filter(Boolean).join('\n') || '', fontSize: 8.5 },
+          ];
+        })],
+    },
+    layout: zebra(),
+  });
+
+  // Photos with units drawn on
+  const pics = p.rooms.flatMap((r) => (r.photos || []).filter((x) => x.overlayUrl || x.dataUrl).map((x) => ({ ...x, room: r.name })));
+  if (pics.length) {
+    const cells = pics.map((x) => ({
+      stack: [
+        { image: x.overlayUrl || x.dataUrl, fit: [250, 190], alignment: 'center' },
+        { text: x.caption || x.room || '', style: 'caption', alignment: 'center', margin: [0, 4, 0, 0] },
+      ],
+      margin: [0, 0, 0, 10], unbreakable: true,
+    }));
+    const rows = [];
+    for (let i = 0; i < cells.length; i += 2) rows.push([cells[i], cells[i + 1] || '']);
+    out.push(H('Where the units will go'));
+    out.push({ text: 'The drawings show the unit at roughly the right size and position. Final positions are agreed on the day.', color: C.muted, fontSize: 8.5, margin: [0, 0, 0, 8] });
+    out.push({ table: { widths: ['*', '*'], body: rows, dontBreakRows: true }, layout: 'noBorders' });
+  }
+
+  // Options
+  out.push(H('Your options'));
+  const colW = offered.length === 1 ? ['*'] : offered.map(() => '*');
+  const head = offered.map((o) => ({
+    stack: [
+      { text: o.tier.label, font: 'ArchivoX', fontSize: 12, color: q.recommended === o.tier.id ? C.orange : C.navyDeep },
+      { text: o.tier.blurb, fontSize: 8, color: C.muted, margin: [0, 2, 0, 0] },
+      q.recommended === o.tier.id ? { text: 'RECOMMENDED', fontSize: 7, bold: true, color: C.orange, margin: [0, 3, 0, 0] } : '',
+    ],
+  }));
+  const unitRows = p.rooms.map((r, ri) => offered.map((o) => {
+    const x = o.perRoom[ri];
+    return x.unit
+      ? { stack: [{ text: r.name, style: 'k' }, { text: `${x.unit.make} ${x.unit.model}`, bold: true, fontSize: 9 }, { text: `${x.unit.kw} kW`, fontSize: 8, color: C.muted }, x.unit.features ? { text: x.unit.features, fontSize: 7.8, color: C.muted, margin: [0, 2, 0, 0] } : ''] }
+      : { text: 'No unit of this size in the range', color: C.na, italics: true, fontSize: 8.5 };
+  }));
+  const totalRow = offered.map((o) => ({
+    stack: [
+      { text: o.available ? fmtGBP0(o.total) : '–', font: 'ArchivoX', fontSize: 17, color: accepted && accepted.tier.id === o.tier.id ? G : C.navyDeep },
+      { text: `inc VAT   (${fmtGBP(o.subtotal)} + VAT)`, fontSize: 7.5, color: C.muted },
+      accepted && accepted.tier.id === o.tier.id ? { text: 'ACCEPTED', fontSize: 7.5, bold: true, color: G, margin: [0, 3, 0, 0] } : '',
+    ],
+  }));
+  out.push({
+    table: { widths: colW, headerRows: 1, body: [head, ...unitRows, totalRow] },
+    layout: {
+      hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 0 : 0.6), vLineWidth: () => 0.6,
+      hLineColor: () => C.line, vLineColor: () => C.line,
+      fillColor: (row, node, col) => (q.recommended === offered[col]?.tier.id ? '#FFF6EC' : null),
+      paddingLeft: () => 8, paddingRight: () => 8, paddingTop: () => 7, paddingBottom: () => 7,
+    },
+  });
+
+  // Included
+  const rec = offered.find((o) => o.tier.id === (accepted ? accepted.tier.id : q.recommended)) || offered[0];
+  if (rec) {
+    out.push(H(`What's included (${rec.tier.label} option)`));
+    const lines = [];
+    rec.perRoom.forEach((x) => x.lines.forEach((l) => lines.push(`${x.room.name}: ${l.label}${l.qty !== 1 ? ` × ${l.qty}${l.unitLabel === 'm' ? 'm' : ''}` : ''}`)));
+    lines.push(`Labour: ${p.hours} hours${q.engineers > 1 ? ` × ${q.engineers} engineers` : ''}, including commissioning and handover`);
+    (q.extras || []).filter((e) => e.label).forEach((e) => lines.push(`${e.label}: ${fmtGBP(parseFloat(e.price) || 0)}`));
+    out.push({ ul: lines, markerColor: C.orange, fontSize: 9, lineHeight: 1.25 });
+  }
+  if (q.survey.notes || q.survey.access || q.survey.power) {
+    out.push(H('Site notes'));
+    out.push(infoGrid([['Access', q.survey.access], ['Parking', q.survey.parking], ['Power', q.survey.power], ['Notes', q.survey.notes]]));
+  }
+
+  out.push(H('Terms'));
+  out.push({ stack: lines(price.terms).map((l) => ({ text: l, fontSize: 8.5, color: C.muted, margin: [0, 0, 0, 3], lineHeight: 1.25 })) });
+
+  // Acceptance
+  const dep = parseFloat(price.deposit) || 0;
+  out.push({
+    stack: [
+      H('Acceptance'),
+      {
+        text: accepted
+          ? [{ text: `Accepted: ${accepted.tier.label} option, ${fmtGBP(accepted.total)} inc VAT. `, bold: true, color: G }, { text: dep ? `Deposit of ${fmtGBP(accepted.total * dep / 100)} (${dep}%) due now, balance on completion.` : '' }]
+          : [{ text: 'To go ahead, pick an option, sign below and send it back, or just reply to the message this came with. ' }, { text: dep ? `A ${dep}% deposit is payable on acceptance.` : '' }],
+        margin: [0, 0, 0, 10], lineHeight: 1.3,
+      },
+      {
+        columns: [
+          sigCell('Customer', accepted ? job.sign.customer : { name: '', img: '', at: null }),
+          { stack: [{ text: 'Option chosen', style: 'k', margin: [0, 0, 0, 4] }, { text: accepted ? accepted.tier.label : '   Good   /   Better   /   Best', margin: [0, 8, 0, 0], bold: !!accepted, color: accepted ? G : C.ink }] },
+        ],
+        columnGap: 30,
+      },
+      { columns: [sigCell('For Comfyair', job.sign.engineer), { text: '' }], columnGap: 30, margin: [0, 12, 0, 0] },
+    ],
+    unbreakable: true,
+  });
+  return out;
+}
+
+const BUILDERS = { service: serviceContent, vrf: vrfContent, commissioning: commissioningContent, rams: ramsContent, quote: quoteContent };
 
 // ---------- document ----------
 
 export function docDefinition(job, settings) {
   const t = JOB_TYPES[job.type];
+  priceCache = getPrice(settings);
   return shell(settings, {
     title: t.pdfTitle,
-    subtitle: [{ text: 'Job ' }, { text: job.jobNo || '', bold: true }, { text: '    ' + fmtDateUK(job.date) }],
+    subtitle: [{ text: job.type === 'quote' ? 'Quote ' : 'Job ' }, { text: job.jobNo || '', bold: true }, { text: '    ' + fmtDateUK(job.date) }],
     info: { title: `${t.pdfTitle} ${job.jobNo}`, subject: job.client.name },
     content: BUILDERS[job.type](job),
   });

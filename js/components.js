@@ -159,7 +159,7 @@ export function SignatureBox({ title, sig, onChange, allowUnavailable, namePlace
 
 // ---------- photos ----------
 
-async function compress(file, max = 1600, quality = 0.8) {
+export async function compress(file, max = 1600, quality = 0.8) {
   const url = URL.createObjectURL(file);
   try {
     const img = await new Promise((res, rej) => {

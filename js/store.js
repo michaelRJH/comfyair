@@ -79,6 +79,7 @@ export async function createJob(type, prefill) {
 
 function applyPrefill(job, p) {
   if (p.client) job.client = { ...job.client, ...p.client };
+  if (p.fromQuote) job.fromQuote = p.fromQuote;
   if (p.site) job.site = { ...job.site, ...p.site };
   if (p.units && job.type === 'vrf') {
     job.data.units = p.units.map((u) => ({ ...u, id: uid(), comment: '', temp: '' }));

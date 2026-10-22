@@ -10,6 +10,7 @@ import {
   HAZARD_LIBRARY, hazardFromLibrary, blankHazard,
 } from './schema.js';
 import { uid, vibrate, onSiteMinutes } from './util.js';
+import { quoteSections, checkQuote } from './quoteforms.js';
 
 // Immutable deep set: setIn(obj, ['data','unit','make'], 'Daikin')
 export function setIn(obj, path, value) {
@@ -547,10 +548,12 @@ export const SECTIONS = {
   vrf: vrfSections,
   commissioning: commissioningSections,
   rams: ramsSections,
+  quote: quoteSections,
 };
 
 // Things worth flagging before a job is finished.
 export function checkJob(job) {
+  if (job.type === 'quote') return checkQuote(job);
   const w = [];
   if (!job.jobNo) w.push('No job number');
   if (!job.client.name && job.type !== 'rams') w.push('No client name');

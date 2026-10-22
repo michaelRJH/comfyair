@@ -2,6 +2,7 @@
 // Wording is taken from Comfyair's existing paperwork, tidied up.
 
 import { uid, todayISO } from './util.js';
+import { QUOTE_DEFAULT } from './quote.js';
 
 export const COMPANY_DEFAULT = {
   name: 'Comfyair',
@@ -40,6 +41,15 @@ export const JOB_TYPES = {
     icon: 'gauge',
     tone: 'sky',
   },
+  quote: {
+    id: 'quote',
+    label: 'Quote',
+    blurb: 'Survey the rooms, place the units on photos, price three options',
+    pdfTitle: 'Quotation',
+    fileLabel: 'Quote',
+    icon: 'tag',
+    tone: 'green',
+  },
   rams: {
     id: 'rams',
     label: 'RAMS',
@@ -51,7 +61,7 @@ export const JOB_TYPES = {
   },
 };
 
-export const TYPE_ORDER = ['service', 'vrf', 'commissioning', 'rams'];
+export const TYPE_ORDER = ['service', 'vrf', 'commissioning', 'rams', 'quote'];
 
 // Not a job, but shares the PDF and sharing machinery.
 JOB_TYPES.timesheet = {
@@ -269,6 +279,11 @@ export function newJob(type, { jobNo, engineer }) {
       handover: true, notes: '',
     };
   }
+  if (type === 'quote') {
+    base.data = QUOTE_DEFAULT();
+    base.time = null;
+    base.sign.customer = { name: '', img: '', at: null, unavailable: false, reason: '' };
+  }
   if (type === 'rams') {
     base.data = { ms: MS_DEFAULT(), ra: RA_DEFAULT() };
     base.data.ms.signoff[0].name = engineer || '';
@@ -281,5 +296,6 @@ export function newJob(type, { jobNo, engineer }) {
 
 export const jobTitle = (job) => {
   if (job.type === 'rams') return job.data?.ms?.project || job.client.name || job.site.name || 'Untitled RAMS';
+  if (job.type === 'quote') return job.client.name || job.data?.title || job.site.name || 'New quote';
   return job.client.name || job.site.name || 'New job';
 };

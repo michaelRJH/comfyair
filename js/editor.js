@@ -72,7 +72,7 @@ export function Editor({ id, settings }) {
 
   const t = JOB_TYPES[job.type];
   const engineers = settings.engineers.map((e) => e.name);
-  const sections = SECTIONS[job.type](job, { set, patch, engineers });
+  const sections = SECTIONS[job.type](job, { set, patch, engineers, settings });
 
   const jump = (sid) => {
     const el = document.getElementById(sid);
@@ -122,7 +122,7 @@ export function Editor({ id, settings }) {
   return html`<div class=${'screen editor tone-' + t.tone}>
     <div class="editor__chrome">
       <${TopBar} title=${t.label} onBack=${async () => { await flush(); cameFrom() ? history.back() : go('/', null, true); }}
-        sub=${html`<span>Job ${job.jobNo}</span><span class=${'savedot' + (saved ? ' is-saved' : '')}>${saved ? 'Saved' : 'Saving'}</span>`}
+        sub=${html`<span>${job.type === 'quote' ? 'Quote' : 'Job'} ${job.jobNo}</span><span class=${'savedot' + (saved ? ' is-saved' : '')}>${saved ? 'Saved' : 'Saving'}</span>`}
         right=${html`<button class="iconbtn" aria-label="More options" onClick=${() => setMenu(true)}><${Icon} name="more" /></button>`} />
       <nav class="secnav" ref=${navRef} aria-label="Sections">
         ${sections.map((s) => html`<button type="button" class=${'secnav__btn' + (active === s.id ? ' is-on' : '')} onClick=${() => jump(s.id)}>${s.nav}</button>`)}
@@ -138,12 +138,26 @@ export function Editor({ id, settings }) {
       <button class="btn btn--ghost" onClick=${preview}><${Icon} name="eye" size=${20} /> Preview</button>
       <button class="btn btn--primary btn--grow" onClick=${() => (job.status === 'complete' ? preview() : finish(false))}>
         <${Icon} name=${job.status === 'complete' ? 'share' : 'check'} size=${20} />
-        ${job.status === 'complete' ? 'Send PDF' : 'Finish job'}</button>
+        ${job.status === 'complete' ? 'Send PDF' : job.type === 'quote' ? 'Finish quote' : 'Finish job'}</button>
     </div>
 
-    <${Sheet} open=${menu} onClose=${() => setMenu(false)} title=${`Job ${job.jobNo}`}>
+    <${Sheet} open=${menu} onClose=${() => setMenu(false)} title=${`${job.type === 'quote' ? 'Quote' : 'Job'} ${job.jobNo}`}>
       <div class="menu">
         <button class="menu__item" onClick=${doDuplicate}><${Icon} name="copy" /><span><b>Copy as a new job</b><small>Same client, site and kit with a new job number</small></span></button>
+        ${job.type === 'quote' && job.data.accepted.tier && html`<button class="menu__item" onClick=${async () => {
+            setMenu(false); await flush();
+            const { createJob } = await import('./store.js');
+            const { priceQuote, getPrice } = await import('./quote.js');
+            const p = priceQuote(job.data, getPrice(settings));
+            const opt = p.options.find((o) => o.tier.id === job.data.accepted.tier);
+            const first = opt && opt.perRoom[0];
+            const j = await createJob('commissioning', { client: job.client, site: job.site });
+            if (first && first.unit) { j.data.make = first.unit.make; j.data.indoor.model = first.unit.model; j.data.indoor.location = first.room.indoorSpot || first.room.name; j.data.outdoor.location = first.room.outdoorSpot; j.data.coolKw = String(first.unit.kw); j.data.pipeLength = first.room.pipeM; }
+            j.fromQuote = job.jobNo;
+            await saveJob(j);
+            toast(`Commissioning sheet ${j.jobNo} started from quote ${job.jobNo}`, { icon: 'check' });
+            go(`/job/${j.id}`);
+          }}><${Icon} name="gauge" /><span><b>Start the install job</b><small>Commissioning sheet with the client, site and accepted unit filled in</small></span></button>`}
         ${job.status === 'complete' && html`<button class="menu__item" onClick=${async () => { setMenu(false); patch({ status: 'draft' }); toast('Moved back to drafts'); }}><${Icon} name="undo" /><span><b>Move back to drafts</b><small>Mark as not finished</small></span></button>`}
         <button class="menu__item menu__item--danger" onClick=${doDelete}><${Icon} name="trash" /><span><b>Delete job</b><small>Removes it from this phone</small></span></button>
       </div>
@@ -227,7 +241,7 @@ export function Send({ id, done, settings }) {
       <svg class="donebanner__mark" viewBox="0 0 52 52" aria-hidden="true">
         <circle cx="26" cy="26" r="23" /><path d="m15 27 7.5 7.5L38 19" />
       </svg>
-      <div><b>Job ${job ? job.jobNo : ''} is finished</b><span>Now send the PDF to the customer.</span></div>
+      <div><b>${job && job.type === 'quote' ? `Quote ${job.jobNo} is ready` : `Job ${job ? job.jobNo : ''} is finished`}</b><span>Now send the PDF to the customer.</span></div>
     </div>`}
     <div class="send__actions" role="group" aria-label="Send options">
       ${actions.map((a) => html`<button class=${'sendbtn sendbtn--' + a.key} disabled=${!file || !!busy} onClick=${() => run(a.key, a.fn)}>
