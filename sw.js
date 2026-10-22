@@ -1,7 +1,7 @@
 // Offline support: keeps the whole app on the phone so it works in plant rooms with no signal.
 // Bump VERSION whenever any file changes so phones pick up the update.
 
-const VERSION = 'comfyair-v1.6.1';
+const VERSION = 'comfyair-v1.6.2';
 const FILES = [
   './',
   'index.html',

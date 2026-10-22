@@ -1004,7 +1004,9 @@ p { margin: 0; }
 .arsheet { position: fixed; inset: 0; z-index: 100; background: #0B1A2A; display: flex; flex-direction: column; padding: calc(8px + var(--safe-t)) 10px calc(10px + var(--safe-b)); animation: fadeIn .18s ease; }
 .arsheet__size { color: rgba(255,255,255,.65); font-size: 12px; font-weight: 600; }
 .arsheet__mv { flex: 1; width: 100%; border-radius: 14px; background: radial-gradient(ellipse at 50% 40%, #27415E, #0B1A2A 75%); --poster-color: transparent; }
-.arsheet__arbtn { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); white-space: nowrap; }
+.arsheet__arbtn { margin-top: 10px; }
+.arsheet__bar { position: absolute; left: 0; top: 0; height: 4px; background: var(--orange); border-radius: 2px; transition: width .2s, opacity .4s; }
+.arsheet__qlink { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
 .arsheet__loading { flex: 1; display: grid; place-items: center; }
 .arsheet__hint { color: rgba(255,255,255,.7); padding-top: 10px; }
 .arsheet__err { color: #fff; padding: 20px; }
