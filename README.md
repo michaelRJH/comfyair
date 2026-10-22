@@ -25,7 +25,11 @@ Every job has:
 
 It also:
 
-- **Quote builder.** Survey each room (size, use, glazing, people, equipment) and the app works out the cooling load, picks a unit from your price list in three tiers (Good, Better, Best), prices pipework, trunking, bracket, pump, electrics and labour, and makes a customer-ready quote PDF. Photograph the wall and drag a to-scale drawing of the unit onto it so the customer sees where it goes. Customer picks an option and signs on the phone; one tap then starts the commissioning sheet with the accepted unit filled in. Your prices live in **Settings, Quotes and prices** (it ships with example prices to replace).
+- **Quote builder.** Pick what you're quoting (home single room, several rooms off one outdoor, office or shop, server room, cold room or cellar, replacement, service contract, repair or small works). Survey each room (size, use, glazing, aspect, people, equipment) and the app works out the cooling load, picks units from your price book in three tiers (Good, Better, Best), sizes the multi-split outdoor and checks it isn't over-connected, and builds the full cost build-up (equipment, pipework, drains, electrics, builders work, access, labour from your hours rules). Every line can be edited or removed on that quote only, and a private toggle shows your cost and margin, never printed. Running cost, sound level and warranty go on the customer's options. Service contracts price Bronze/Silver/Gold on the units recorded at the site; repairs pull the recommendations straight off a job sheet.
+- **Place the unit on a photo, in true perspective.** Photograph the wall, drag four dots to its corners, tell it the wall size, and the unit is drawn as a 3D box at its real size on that wall. Drag it about, add the trunking run, or switch to the outdoor unit. The photo goes on the cover of the quote.
+- **See it in AR.** One tap opens the unit as a spinnable 3D model, and the camera button places it on the customer's actual wall at real size using the phone's own AR viewer (Scene Viewer on Android, Quick Look on iPhone). Models are in `assets/models` (GLB and USDZ), made at the real dimensions.
+- **Quotes pipeline on Home.** What's out with customers and its value, what's been won this month, win rate, and a nudge when a quote has sat for five days with a one-tap WhatsApp chase. Mark won (pick the option) or lost from Home. Accepted quotes start the commissioning sheet with the kit filled in, give a pick list for the wholesaler, and show quoted hours against actual hours from the job sheets. **New revision** copies a quote with a new number for changes after it's been sent.
+- Your price book lives in **Settings, Quotes and prices**: units (with efficiency and sound figures), multi-split outdoors, cold room kit, materials, rates, labour hours rules, service levels and terms. Import your wholesaler's price sheet as a CSV. It ships with example prices to replace.
 - **Sends whole jobs between phones.** On the finished-job screen, **Send to the boss's app** shares a job file (photos, signatures and location stamps included) by WhatsApp or email. On the other phone, save the file, then tap the import arrow on the Jobs screen (or **Import a job** in Settings) and it lands in the Jobs list, site and units included.
 - **Send my location.** One tap on the Time tab sends a map pin with the time by WhatsApp, for when the boss asks where you are. The app never tracks in the background; for live tracking use a van tracker.
 - **Timesheets with GPS stamps.** The Time tab has Clock in, Break and Clock out. Each tap, and each Arrived and Left on a job sheet, records the phone's location at that moment (never in between). The week view shows hours, jobs and pay, and **Sign and send** makes a timesheet PDF for the boss. The PDF lists where the phone was at every tap, with a map link, and flags anything that doesn't add up: clocked in miles from the first job, "arrived" nowhere near the site, times changed by hand, hours typed that don't match the clock, hours with no job sheets. Rate, overtime and who it goes to are in Settings.
@@ -63,7 +67,9 @@ The app is plain HTML, CSS and JavaScript with no build step. Edit the files and
 | Check list items, hazard library, default RAMS wording | `js/schema.js` |
 | Form fields | `js/forms.js` |
 | Quote builder, cooling load rule of thumb, tiers | `js/quote.js`, `js/quoteforms.js` |
-| Unit drawings placed on photos | `js/overlay.js` |
+| Perspective placement of units on photos | `js/overlay.js` |
+| AR viewer | `js/ar.js` (uses `vendor/model-viewer.min.js`, models in `assets/models`) |
+| Quotes pipeline on Home | `js/pipeline.js` |
 | PDF layout | `js/pdf.js` |
 | Colours and styling | `css/app.css` |
 | Company details, email message, hourly rate, overtime, who timesheets go to | In the app, Settings |
@@ -78,5 +84,6 @@ The app is plain HTML, CSS and JavaScript with no build step. Edit the files and
 - [pdfmake](http://pdfmake.org) to make the PDFs on the phone
 - [PDF.js](https://mozilla.github.io/pdf.js/) for the in-app preview
 - [Archivo](https://fonts.google.com/specimen/Archivo) typeface (SIL Open Font License)
+- [model-viewer](https://modelviewer.dev) for the 3D and AR view
 
 All libraries are stored in `vendor/` so the app works offline.

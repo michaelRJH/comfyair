@@ -14,10 +14,11 @@ import { LISTS, removeFromList, removeCustomHazard } from './lists.js';
 import { ClockCard } from './timescreen.js';
 import { ComfyPopup } from './mascot.js';
 import { PriceSettings } from './quoteforms.js';
+import { QuotesBlock } from './pipeline.js';
 import { getPay, setYardHere } from './timesheet.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.5.0';
+const VERSION = '1.6.0';
 
 // ---------- shared bits ----------
 
@@ -128,6 +129,8 @@ export function Home({ settings }) {
         <div class="list">${drafts.map((j) => html`<${JobRow} key=${j.id} job=${j} />`)}</div>
       </section>`}
 
+      <${QuotesBlock} jobs=${jobs || []} settings=${settings} onChange=${() => allJobs().then(setJobs)} />
+
       ${due.length > 0 && html`<section class="block">
         <h2 class="block__title">Due for service</h2>
         <div class="list">
@@ -215,11 +218,11 @@ export async function importJobFromFiles(fileList, onDone) {
   }
 }
 
-export function Jobs() {
+export function Jobs({ filter }) {
   const [jobs, setJobs] = useState(null);
   const importRef = useRef();
   const [q, setQ] = useState('');
-  const [f, setF] = useState('all');
+  const [f, setF] = useState(filter && JOB_TYPES[filter] ? filter : 'all');
   const [sheet, setSheet] = useState(false);
   useEffect(() => { allJobs().then(setJobs); }, []);
 

@@ -1,7 +1,7 @@
 // Offline support: keeps the whole app on the phone so it works in plant rooms with no signal.
 // Bump VERSION whenever any file changes so phones pick up the update.
 
-const VERSION = 'comfyair-v1.5.0';
+const VERSION = 'comfyair-v1.6.0';
 const FILES = [
   './',
   'index.html',
@@ -29,11 +29,24 @@ const FILES = [
   'js/quote.js',
   'js/quoteforms.js',
   'js/overlay.js',
+  'js/ar.js',
+  'js/pipeline.js',
   'vendor/preact-htm.js',
   'vendor/pdfmake.min.js',
   'vendor/pdf-fonts.js',
   'vendor/pdf.min.js',
   'vendor/pdf.worker.min.js',
+  'vendor/model-viewer.min.js',
+  'assets/models/wall-s.glb',
+  'assets/models/wall-m.glb',
+  'assets/models/wall-l.glb',
+  'assets/models/cassette-600.glb',
+  'assets/models/cassette-840.glb',
+  'assets/models/floor.glb',
+  'assets/models/outdoor-s.glb',
+  'assets/models/outdoor-m.glb',
+  'assets/models/outdoor-l.glb',
+  'assets/models/outdoor-xl.glb',
   'assets/logo.png',
   'assets/logo-white.png',
   'assets/fonts/archivo-wdth.woff2',

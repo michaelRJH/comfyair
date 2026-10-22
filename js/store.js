@@ -108,6 +108,13 @@ export async function duplicateJob(src) {
     fresh.data = copy.data;
     fresh.data.ms.revision = String((Number(copy.data.ms.revision) || 0) + 1);
     fresh.data.ra.reviewDate = '';
+  } else if (src.type === 'quote') {
+    // a revision: same survey, new number, back to draft, nothing accepted yet
+    fresh.data = copy.data;
+    fresh.data.accepted = { tier: '', at: null };
+    fresh.data.pipeline = { ...copy.data.pipeline, status: 'draft', sentAt: null, chaseAt: null, lostReason: '', revision: (copy.data.pipeline?.revision || 1) + 1, parentId: src.id };
+    fresh.engineer = copy.engineer || fresh.engineer;
+    fresh.sign.engineer = copy.sign.engineer;
   }
   await saveJob(fresh);
   return fresh;

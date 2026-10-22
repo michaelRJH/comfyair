@@ -105,7 +105,7 @@ export function Editor({ id, settings }) {
     setMenu(false);
     await flush();
     const n = await duplicateJob(jobRef.current || job);
-    toast(`Copied as job ${n.jobNo}`, { icon: 'copy' });
+    toast(job.type === 'quote' ? `Revision ${n.data.pipeline.revision} is quote ${n.jobNo}` : `Copied as job ${n.jobNo}`, { icon: 'copy' });
     go(`/job/${n.id}`);
   };
   const doDelete = async () => {
@@ -143,21 +143,33 @@ export function Editor({ id, settings }) {
 
     <${Sheet} open=${menu} onClose=${() => setMenu(false)} title=${`${job.type === 'quote' ? 'Quote' : 'Job'} ${job.jobNo}`}>
       <div class="menu">
-        <button class="menu__item" onClick=${doDuplicate}><${Icon} name="copy" /><span><b>Copy as a new job</b><small>Same client, site and kit with a new job number</small></span></button>
+        ${job.type === 'quote'
+          ? html`<button class="menu__item" onClick=${doDuplicate}><${Icon} name="copy" /><span><b>New revision</b><small>Copy of this quote with a new number, for changes after it's been sent</small></span></button>`
+          : html`<button class="menu__item" onClick=${doDuplicate}><${Icon} name="copy" /><span><b>Copy as a new job</b><small>Same client, site and kit with a new job number</small></span></button>`}
         ${job.type === 'quote' && job.data.accepted.tier && html`<button class="menu__item" onClick=${async () => {
             setMenu(false); await flush();
             const { createJob } = await import('./store.js');
             const { priceQuote, getPrice } = await import('./quote.js');
             const p = priceQuote(job.data, getPrice(settings));
             const opt = p.options.find((o) => o.tier.id === job.data.accepted.tier);
-            const first = opt && opt.perRoom[0];
+            const sys = opt && opt.systems[0];
+            const first = sys && sys.units.find((u) => u.role === 'indoor');
+            const out = sys && sys.units.find((u) => u.role === 'outdoor');
             const j = await createJob('commissioning', { client: job.client, site: job.site });
-            if (first && first.unit) { j.data.make = first.unit.make; j.data.indoor.model = first.unit.model; j.data.indoor.location = first.room.indoorSpot || first.room.name; j.data.outdoor.location = first.room.outdoorSpot; j.data.coolKw = String(first.unit.kw); j.data.pipeLength = first.room.pipeM; }
+            if (first) { j.data.make = first.unit.make; j.data.indoor.model = first.unit.model; j.data.indoor.location = first.indoor.spot || first.indoor.room.name; j.data.outdoor.location = sys.sys.outdoor.spot; j.data.coolKw = String(first.unit.kwCool); j.data.pipeLength = first.indoor.pipeM; if (out) j.data.outdoor.model = out.unit.model; }
             j.fromQuote = job.jobNo;
             await saveJob(j);
             toast(`Commissioning sheet ${j.jobNo} started from quote ${job.jobNo}`, { icon: 'check' });
             go(`/job/${j.id}`);
           }}><${Icon} name="gauge" /><span><b>Start the install job</b><small>Commissioning sheet with the client, site and accepted unit filled in</small></span></button>`}
+        ${job.type === 'quote' && job.data.accepted.tier && job.data.kind === 'install' && html`<button class="menu__item" onClick=${async () => {
+            setMenu(false); await flush();
+            const { pickList, getPrice } = await import('./quote.js');
+            const rows = pickList(job.data, getPrice(settings), job.data.accepted.tier);
+            const text = `Pick list, quote ${job.jobNo}, ${job.client.name || job.site.name}\n` + rows.map((r) => `- ${r.qty}${r.unit === 'm' ? 'm' : r.unit === 'm²' ? 'm²' : r.unit === 'each' || r.unit === 'set' ? 'x' : ' ' + r.unit} ${r.item}`).join('\n');
+            if (navigator.share) { try { await navigator.share({ title: `Pick list ${job.jobNo}`, text }); } catch (e) { /* cancelled */ } }
+            else { await navigator.clipboard.writeText(text); toast('Pick list copied', { icon: 'check' }); }
+          }}><${Icon} name="box" /><span><b>Pick list for the wholesaler</b><small>Every part on the accepted option, ready to send</small></span></button>`}
         ${job.status === 'complete' && html`<button class="menu__item" onClick=${async () => { setMenu(false); patch({ status: 'draft' }); toast('Moved back to drafts'); }}><${Icon} name="undo" /><span><b>Move back to drafts</b><small>Mark as not finished</small></span></button>`}
         <button class="menu__item menu__item--danger" onClick=${doDelete}><${Icon} name="trash" /><span><b>Delete job</b><small>Removes it from this phone</small></span></button>
       </div>
@@ -215,6 +227,9 @@ export function Send({ id, done, settings }) {
       if (msg) toast(msg, { icon: msg === 'Sent' ? 'check' : undefined, ms: 4200 });
       if (msg === 'Sent') {
         const j = { ...job, sentAt: Date.now() };
+        if (j.type === 'quote' && j.data.pipeline && !j.data.accepted.tier && j.data.pipeline.status !== 'lost') {
+          j.data = { ...j.data, pipeline: { ...j.data.pipeline, status: 'sent', sentAt: j.data.pipeline.sentAt || Date.now(), chaseAt: Date.now() + 5 * 86400000 } };
+        }
         await saveJob(j);
         setJob(j);
       }

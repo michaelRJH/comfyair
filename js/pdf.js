@@ -7,7 +7,7 @@ import { fmtDateUK, fmtDuration, safeFileName, onSiteMinutes, parseISO } from '.
 import { hasFix, describe, mapsLink, statusLabel } from './geo.js';
 import { allSites } from './store.js';
 import { fmtMoney } from './timesheet.js';
-import { TIERS, ROOM_USES, roomLoad, roomKw, priceQuote, fmtGBP, fmtGBP0, getPrice } from './quote.js';
+import { SYSTEM_KINDS, ROOM_USES, roomLoad, roomKw, priceQuote, fmtGBP, fmtGBP0, getPrice, runningCost, soundWords, migrateQuote } from './quote.js';
 
 const C = {
   navy: '#004684',
@@ -533,106 +533,167 @@ function ramsContent(job) {
 let priceCache = null;
 
 function quoteContent(job) {
-  const q = job.data;
+  const q = migrateQuote(job.data);
   const price = priceCache || getPrice({});
   const p = priceQuote(q, price);
-  const offered = p.options.filter((o) => q.offered.includes(o.tier.id));
+  const offered = p.offered.length ? p.offered : p.options;
   const validUntil = (() => { const d = new Date(job.date); d.setDate(d.getDate() + (parseInt(price.validityDays, 10) || 30)); return d.toISOString().slice(0, 10); })();
   const accepted = q.accepted.tier ? p.options.find((o) => o.tier.id === q.accepted.tier) : null;
   const G = '#11785A';
+  const isService = q.kind === 'service', isWorks = q.kind === 'works';
+  const tierName = (t) => (isService ? ({ good: 'Bronze', better: 'Silver', best: 'Gold' })[t.id] : t.label);
+  const allPics = q.kind === 'install'
+    ? q.systems.flatMap((s) => [...s.indoors.flatMap((i) => (i.photos || []).map((x) => ({ ...x, where: i.room.name }))), ...(s.outdoor.photos || []).map((x) => ({ ...x, where: 'Outdoor unit' }))]).filter((x) => x.overlayUrl || x.dataUrl)
+    : [];
+  const hero = allPics.find((x) => x.overlayUrl) || allPics[0];
 
   const out = [];
-  out.push(infoGrid([
-    ['Prepared for', [job.client.name, job.client.contact].filter(Boolean).join(', ')], ['Quote number', job.jobNo],
-    ['Site', [job.site.name, job.site.address].filter(Boolean).join('\n')], ['Date', fmtDateUK(job.date)],
-    ['Surveyed by', job.engineer], ['Valid until', fmtDateUK(validUntil)],
-  ]));
-  if (q.title) out.push({ text: q.title, font: 'ArchivoX', fontSize: 16, color: C.navyDeep, margin: [0, 16, 0, 4] });
-  if (q.summary) out.push({ text: q.summary, lineHeight: 1.35, margin: [0, q.title ? 0 : 14, 0, 0] });
+  // ---- cover ----
+  const title = q.title || (isService ? 'Maintenance proposal' : isWorks ? 'Quotation for works' : 'Air conditioning proposal');
+  out.push({ text: isService ? 'PROPOSAL' : 'QUOTATION', font: 'ArchivoX', fontSize: 9, color: C.orange, characterSpacing: 2, margin: [0, 20, 0, 6] });
+  out.push({ text: title, font: 'ArchivoX', fontSize: 26, color: C.navyDeep, lineHeight: 1.05 });
+  out.push({ text: `Prepared for ${[job.client.name, job.client.contact].filter(Boolean).join(', ') || 'you'}${job.site.address ? ', ' + job.site.address.split('\n')[0] : ''}`, fontSize: 11, color: C.muted, margin: [0, 8, 0, 18] });
+  if (hero) out.push({ image: hero.overlayUrl || hero.dataUrl, fit: [523, 330], alignment: 'center', margin: [0, 0, 0, 6] });
+  if (hero && hero.caption) out.push({ text: hero.caption, style: 'caption', alignment: 'center' });
+  if (q.summary) out.push({ text: q.summary, fontSize: 11, lineHeight: 1.4, margin: [0, hero ? 16 : 0, 0, 0] });
+  // headline price block on the cover
+  const rec = offered.find((o) => o.tier.id === (accepted ? accepted.tier.id : q.recommended)) || offered[0];
+  if (rec && rec.available) {
+    out.push({
+      margin: [0, 18, 0, 0],
+      table: { widths: ['*', 'auto'], body: [[
+        { stack: [{ text: accepted ? 'Accepted option' : offered.length > 1 ? `Our recommendation: ${tierName(rec.tier)}` : 'Price', style: 'k', color: C.orange },
+          { text: isService ? 'Per year, including VAT' : 'Fully installed, including VAT', fontSize: 8.5, color: C.muted, margin: [0, 2, 0, 0] }], border: [false, false, false, false] },
+        { text: fmtGBP0(rec.total), font: 'ArchivoX', fontSize: 22, color: accepted ? G : C.navyDeep, alignment: 'right', border: [false, false, false, false], margin: [0, 2, 0, 0] },
+      ]] },
+      layout: { fillColor: () => '#F4F7FA', paddingLeft: () => 12, paddingRight: () => 12, paddingTop: () => 10, paddingBottom: () => 10 },
+    });
+  }
+  out.push({ columns: [
+    { text: [{ text: 'Quote ', style: 'k' }, { text: job.jobNo || '', bold: true }, { text: q.pipeline && q.pipeline.revision > 1 ? `  rev ${q.pipeline.revision}` : '' }], fontSize: 9 },
+    { text: [{ text: 'Date ', style: 'k' }, fmtDateUK(job.date)], fontSize: 9, alignment: 'center' },
+    { text: [{ text: 'Valid until ', style: 'k' }, fmtDateUK(validUntil)], fontSize: 9, alignment: 'center' },
+    { text: [{ text: 'Surveyed by ', style: 'k' }, job.engineer || ''], fontSize: 9, alignment: 'right' },
+  ], margin: [0, 14, 0, 0], pageBreak: 'after' });
 
-  // Rooms
-  out.push(H('What we surveyed'));
-  out.push({
-    table: {
-      headerRows: 1, dontBreakRows: true,
-      widths: ['*', 46, 48, 52, '*'],
-      body: [[th('Room'), th('Size', 'center'), th('Cooling', 'center'), th('Unit type'), th('Where it goes')],
-        ...p.rooms.map((r) => {
-          const l = roomLoad(r);
-          const use = ROOM_USES.find((x) => x.id === r.use);
-          return [
-            { text: [{ text: r.name, bold: true }, use ? { text: '\n' + use.label, color: C.muted, fontSize: 8 } : ''] },
-            { text: l.area ? `${l.area} m²` : '', alignment: 'center' },
-            { text: `${roomKw(r)} kW`, alignment: 'center', bold: true },
-            { text: r.unitType },
-            { text: [r.indoorSpot, r.outdoorSpot ? 'Outdoor: ' + r.outdoorSpot : ''].filter(Boolean).join('\n') || '', fontSize: 8.5 },
-          ];
-        })],
-    },
-    layout: zebra(),
-  });
+  // ---- install: what we surveyed ----
+  if (q.kind === 'install') {
+    out.push(H('What we surveyed'));
+    const body = [[th('System / room'), th('Size', 'center'), th('Cooling', 'center'), th('Unit'), th('Where it goes')]];
+    q.systems.forEach((s) => {
+      const built = rec ? rec.systems.find((x) => x.sys.id === s.id) : null;
+      const kind = SYSTEM_KINDS.find((k) => k.id === s.kind).label;
+      if (s.kind === 'cold') {
+        body.push([{ text: [{ text: s.name || 'Cold room', bold: true }, { text: '\n' + kind, color: C.muted, fontSize: 8 }] }, { text: s.cold.panelsM2 ? `${s.cold.panelsM2} m² panels` : '', alignment: 'center' }, { text: `${s.cold.kw || '–'} kW at ${s.cold.tempC}°C`, alignment: 'center', bold: true },
+          { text: built ? built.units.map((u) => `${u.unit.make} ${u.unit.model}`).join('\n') : '', fontSize: 8.5 }, { text: s.outdoor.spot, fontSize: 8.5 }]);
+        return;
+      }
+      s.indoors.forEach((ind, i) => {
+        const l = roomLoad(ind.room), use = ROOM_USES.find((x) => x.id === ind.room.use);
+        const u = built && built.units.find((x) => x.role === 'indoor' && x.indoor.id === ind.id);
+        body.push([
+          { text: [{ text: ind.room.name || `Room ${i + 1}`, bold: true }, { text: '\n' + [q.systems.length > 1 || s.kind === 'multi' ? (s.name || kind) : '', use && use.label].filter(Boolean).join(', '), color: C.muted, fontSize: 8 }] },
+          { text: l.area ? `${l.area} m²` : '', alignment: 'center' },
+          { text: `${roomKw(ind.room)} kW`, alignment: 'center', bold: true },
+          { text: u ? `${u.unit.make} ${u.unit.model}` : ind.unitType, fontSize: 8.5 },
+          { text: ind.spot, fontSize: 8.5 },
+        ]);
+      });
+      const o = built && built.units.find((x) => x.role === 'outdoor');
+      if (s.kind === 'multi' || s.outdoor.spot) body.push([{ text: `${s.name || kind}: outdoor unit`, color: C.muted, fontSize: 8.5 }, '', '', { text: o ? `${o.unit.make} ${o.unit.model}` : '', fontSize: 8.5 }, { text: s.outdoor.spot, fontSize: 8.5 }]);
+    });
+    out.push({ table: { headerRows: 1, dontBreakRows: true, widths: ['*', 44, 56, 110, '*'], body }, layout: zebra() });
 
-  // Photos with units drawn on
-  const pics = p.rooms.flatMap((r) => (r.photos || []).filter((x) => x.overlayUrl || x.dataUrl).map((x) => ({ ...x, room: r.name })));
-  if (pics.length) {
-    const cells = pics.map((x) => ({
-      stack: [
-        { image: x.overlayUrl || x.dataUrl, fit: [250, 190], alignment: 'center' },
-        { text: x.caption || x.room || '', style: 'caption', alignment: 'center', margin: [0, 4, 0, 0] },
-      ],
-      margin: [0, 0, 0, 10], unbreakable: true,
-    }));
-    const rows = [];
-    for (let i = 0; i < cells.length; i += 2) rows.push([cells[i], cells[i + 1] || '']);
-    out.push(H('Where the units will go'));
-    out.push({ text: 'The drawings show the unit at roughly the right size and position. Final positions are agreed on the day.', color: C.muted, fontSize: 8.5, margin: [0, 0, 0, 8] });
-    out.push({ table: { widths: ['*', '*'], body: rows, dontBreakRows: true }, layout: 'noBorders' });
+    const rest = allPics.filter((x) => x !== hero);
+    if (rest.length) {
+      const cells = rest.map((x) => ({ stack: [{ image: x.overlayUrl || x.dataUrl, fit: [250, 190], alignment: 'center' }, { text: x.caption || x.where || '', style: 'caption', alignment: 'center', margin: [0, 4, 0, 0] }], margin: [0, 0, 0, 10], unbreakable: true }));
+      const rows = []; for (let i = 0; i < cells.length; i += 2) rows.push([cells[i], cells[i + 1] || '']);
+      out.push(H('Where the units will go'));
+      out.push({ text: 'Drawn to scale in the photos. Final positions are agreed with you on the day.', color: C.muted, fontSize: 8.5, margin: [0, 0, 0, 8] });
+      out.push({ table: { widths: ['*', '*'], body: rows, dontBreakRows: true }, layout: 'noBorders' });
+    }
   }
 
-  // Options
-  out.push(H('Your options'));
-  const colW = offered.length === 1 ? ['*'] : offered.map(() => '*');
-  const head = offered.map((o) => ({
-    stack: [
-      { text: o.tier.label, font: 'ArchivoX', fontSize: 12, color: q.recommended === o.tier.id ? C.orange : C.navyDeep },
-      { text: o.tier.blurb, fontSize: 8, color: C.muted, margin: [0, 2, 0, 0] },
-      q.recommended === o.tier.id ? { text: 'RECOMMENDED', fontSize: 7, bold: true, color: C.orange, margin: [0, 3, 0, 0] } : '',
-    ],
-  }));
-  const unitRows = p.rooms.map((r, ri) => offered.map((o) => {
-    const x = o.perRoom[ri];
-    return x.unit
-      ? { stack: [{ text: r.name, style: 'k' }, { text: `${x.unit.make} ${x.unit.model}`, bold: true, fontSize: 9 }, { text: `${x.unit.kw} kW`, fontSize: 8, color: C.muted }, x.unit.features ? { text: x.unit.features, fontSize: 7.8, color: C.muted, margin: [0, 2, 0, 0] } : ''] }
-      : { text: 'No unit of this size in the range', color: C.na, italics: true, fontSize: 8.5 };
-  }));
-  const totalRow = offered.map((o) => ({
-    stack: [
-      { text: o.available ? fmtGBP0(o.total) : '–', font: 'ArchivoX', fontSize: 17, color: accepted && accepted.tier.id === o.tier.id ? G : C.navyDeep },
-      { text: `inc VAT   (${fmtGBP(o.subtotal)} + VAT)`, fontSize: 7.5, color: C.muted },
-      accepted && accepted.tier.id === o.tier.id ? { text: 'ACCEPTED', fontSize: 7.5, bold: true, color: G, margin: [0, 3, 0, 0] } : '',
-    ],
-  }));
+  // ---- works: the lines ----
+  if (isWorks && rec) {
+    out.push(H('The work'));
+    const body = [[th('Item'), th('Qty', 'center'), th('Each', 'right'), th('Total', 'right')]];
+    rec.systems[0].lines.forEach((l) => body.push([l.label, { text: String(l.qty), alignment: 'center' }, { text: fmtGBP(l.each), alignment: 'right' }, { text: fmtGBP(l.total), alignment: 'right' }]));
+    body.push([{ text: `Labour: ${rec.systems[0].hours} hours${rec.systems[0].engineers > 1 ? ` × ${rec.systems[0].engineers} engineers` : ''}` }, '', '', { text: fmtGBP(rec.labour), alignment: 'right' }]);
+    out.push({ table: { headerRows: 1, widths: ['*', 40, 70, 80], body }, layout: zebra() });
+  }
+
+  // ---- options ----
+  out.push(H(isService ? 'Levels of cover' : offered.length > 1 ? 'Your options' : 'Your price'));
+  const colW = offered.map(() => '*');
+  const isRec = (o) => (accepted ? accepted.tier.id === o.tier.id : q.recommended === o.tier.id && offered.length > 1);
+  const head = offered.map((o) => ({ stack: [
+    { text: tierName(o.tier), font: 'ArchivoX', fontSize: 12, color: isRec(o) ? C.orange : C.navyDeep },
+    isService ? '' : { text: o.tier.blurb, fontSize: 8, color: C.muted, margin: [0, 2, 0, 0] },
+    isRec(o) ? { text: accepted ? 'ACCEPTED' : 'RECOMMENDED', fontSize: 7, bold: true, color: accepted ? G : C.orange, margin: [0, 3, 0, 0] } : '',
+  ] }));
+  const rows = [];
+  if (q.kind === 'install') {
+    q.systems.forEach((s) => {
+      const indoorIds = s.kind === 'cold' ? ['cold'] : s.indoors.map((i) => i.id);
+      indoorIds.forEach((id) => rows.push(offered.map((o) => {
+        const bs = o.systems.find((x) => x.sys.id === s.id);
+        if (id === 'cold') { const us = bs ? bs.units : []; return us.length ? { stack: [{ text: s.name || 'Cold room', style: 'k' }, ...us.map((u) => ({ text: `${u.unit.make} ${u.unit.model}`, bold: true, fontSize: 9 }))] } : { text: 'No suitable kit in the range', color: C.na, italics: true, fontSize: 8.5 }; }
+        const u = bs && bs.units.find((x) => x.role === 'indoor' && x.indoor.id === id);
+        if (!u) return { text: 'No unit of this size in the range', color: C.na, italics: true, fontSize: 8.5 };
+        const rc = runningCost(u.unit, price.tariff);
+        return { stack: [
+          { text: u.indoor.room.name || 'Room', style: 'k' },
+          { text: `${u.unit.make} ${u.unit.model}`, bold: true, fontSize: 9 },
+          { text: `${u.unit.kwCool} kW cooling${u.unit.kwHeat ? `, ${u.unit.kwHeat} kW heating` : ''}`, fontSize: 8, color: C.muted },
+          u.unit.dbIn ? { text: `${u.unit.dbIn} dB indoors, ${soundWords(u.unit.dbIn)}`, fontSize: 7.8, color: C.muted } : '',
+          rc && u.unit.seer ? { text: `About ${Math.round(rc.coolPerHour * 100)}p an hour to cool, heating ${rc.heatSavingPct}% cheaper than electric heaters`, fontSize: 7.8, color: C.muted } : '',
+          u.unit.features ? { text: u.unit.features, fontSize: 7.8, color: C.muted, margin: [0, 2, 0, 0] } : '',
+        ] };
+      })));
+      if (s.kind === 'multi') rows.push(offered.map((o) => { const bs = o.systems.find((x) => x.sys.id === s.id); const u = bs && bs.units.find((x) => x.role === 'outdoor'); return u ? { stack: [{ text: `${s.name || 'Multi-split'} outdoor`, style: 'k' }, { text: `${u.unit.make} ${u.unit.model}`, bold: true, fontSize: 9 }, bs.capacity && bs.capacity.ok ? { text: bs.capacity.text, fontSize: 7.8, color: C.muted } : ''] } : { text: 'No outdoor unit big enough', color: C.na, italics: true, fontSize: 8.5 }; }));
+    });
+    rows.push(offered.map((o) => ({ text: `${price.warrantyYears || 5} year parts warranty, ${price.workmanshipYears || 2} year workmanship guarantee`, fontSize: 8, color: C.muted })));
+  }
+  if (isService) {
+    rows.push(offered.map((o) => { const l = o.systems[0].serviceLevel; return { ul: [`${l.visits} visit${l.visits > 1 ? 's' : ''} a year to ${l.n} unit${l.n === 1 ? '' : 's'}`, `${l.response} call-out response`, parseFloat(l.callout) > 0 ? `${l.callout}% off call-out charges` : 'Standard call-out charges', parseFloat(l.parts) > 0 ? `${l.parts}% off parts` : 'Parts at list price', 'F-Gas leak check and certificate', 'Filters cleaned, coils washed, drains cleared'], fontSize: 8.5, markerColor: C.orange, lineHeight: 1.25 }; }));
+  }
+  const totalRow = offered.map((o) => ({ stack: [
+    { text: o.available ? fmtGBP0(o.total) : '–', font: 'ArchivoX', fontSize: 17, color: accepted && accepted.tier.id === o.tier.id ? G : C.navyDeep },
+    { text: `${isService ? 'a year ' : ''}inc VAT   (${fmtGBP(o.subtotal)} + VAT)`, fontSize: 7.5, color: C.muted },
+  ] }));
   out.push({
-    table: { widths: colW, headerRows: 1, body: [head, ...unitRows, totalRow] },
+    table: { widths: colW, headerRows: 1, body: [head, ...rows, totalRow], dontBreakRows: true },
     layout: {
       hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 0 : 0.6), vLineWidth: () => 0.6,
       hLineColor: () => C.line, vLineColor: () => C.line,
-      fillColor: (row, node, col) => (q.recommended === offered[col]?.tier.id ? '#FFF6EC' : null),
+      fillColor: (row, node, col) => (isRec(offered[col]) ? '#FFF6EC' : null),
       paddingLeft: () => 8, paddingRight: () => 8, paddingTop: () => 7, paddingBottom: () => 7,
     },
   });
 
-  // Included
-  const rec = offered.find((o) => o.tier.id === (accepted ? accepted.tier.id : q.recommended)) || offered[0];
-  if (rec) {
-    out.push(H(`What's included (${rec.tier.label} option)`));
-    const lines = [];
-    rec.perRoom.forEach((x) => x.lines.forEach((l) => lines.push(`${x.room.name}: ${l.label}${l.qty !== 1 ? ` × ${l.qty}${l.unitLabel === 'm' ? 'm' : ''}` : ''}`)));
-    lines.push(`Labour: ${p.hours} hours${q.engineers > 1 ? ` × ${q.engineers} engineers` : ''}, including commissioning and handover`);
-    (q.extras || []).filter((e) => e.label).forEach((e) => lines.push(`${e.label}: ${fmtGBP(parseFloat(e.price) || 0)}`));
-    out.push({ ul: lines, markerColor: C.orange, fontSize: 9, lineHeight: 1.25 });
+  // ---- included ----
+  if (rec && q.kind === 'install') {
+    out.push(H(`What's included${offered.length > 1 ? ` (${tierName(rec.tier)} option)` : ''}`));
+    const inc = [];
+    rec.systems.forEach((bs) => {
+      const pre = q.systems.length > 1 ? `${bs.sys.name || SYSTEM_KINDS.find((k) => k.id === bs.sys.kind).label}: ` : '';
+      const grp = (g) => bs.lines.filter((l) => l.group === g);
+      const say = (l) => `${l.label}${l.qty !== 1 && l.unit !== 'each' ? ` (${l.qty}${l.unit === 'm' ? 'm' : l.unit === 'm²' ? ' m²' : l.unit === 'day' ? ' days' : ''})` : l.qty !== 1 ? ` × ${l.qty}` : ''}`;
+      grp('equipment').forEach((l) => inc.push(pre + say(l)));
+      const pw = grp('pipework'); if (pw.length) inc.push(pre + 'Insulated refrigerant pipework, trunking and condensate drain: ' + pw.map(say).join(', '));
+      const el = grp('electrics'); if (el.length) inc.push(pre + 'Electrics: ' + el.map(say).join(', '));
+      const bw = grp('builders'); if (bw.length) inc.push(pre + 'Builders work: ' + bw.map(say).join(', '));
+      const ac = grp('access'); if (ac.length) inc.push(pre + ac.map(say).join(', '));
+      grp('other').forEach((l) => inc.push(pre + say(l)));
+      inc.push(`${pre}Labour: ${bs.hours} hours${bs.engineers > 1 ? ` × ${bs.engineers} engineers` : ''}, including pressure test, vacuum, commissioning and handover`);
+    });
+    (q.extras || []).filter((e) => e.label).forEach((e) => inc.push(`${e.label}: ${fmtGBP(parseFloat(e.price) || 0)}`));
+    inc.push('F-Gas certificate and commissioning sheet on completion', 'All waste and packaging removed');
+    out.push({ ul: inc, markerColor: C.orange, fontSize: 9, lineHeight: 1.25 });
+    if (price.exclusions) { out.push({ text: 'Not included', style: 'k', margin: [0, 10, 0, 3] }); out.push({ text: price.exclusions, fontSize: 8.5, color: C.muted, lineHeight: 1.3 }); }
   }
-  if (q.survey.notes || q.survey.access || q.survey.power) {
+  if (q.survey.notes || q.survey.access || q.survey.power || q.survey.parking) {
     out.push(H('Site notes'));
     out.push(infoGrid([['Access', q.survey.access], ['Parking', q.survey.parking], ['Power', q.survey.power], ['Notes', q.survey.notes]]));
   }
@@ -640,21 +701,21 @@ function quoteContent(job) {
   out.push(H('Terms'));
   out.push({ stack: lines(price.terms).map((l) => ({ text: l, fontSize: 8.5, color: C.muted, margin: [0, 0, 0, 3], lineHeight: 1.25 })) });
 
-  // Acceptance
+  // ---- acceptance ----
   const dep = parseFloat(price.deposit) || 0;
   out.push({
     stack: [
       H('Acceptance'),
       {
         text: accepted
-          ? [{ text: `Accepted: ${accepted.tier.label} option, ${fmtGBP(accepted.total)} inc VAT. `, bold: true, color: G }, { text: dep ? `Deposit of ${fmtGBP(accepted.total * dep / 100)} (${dep}%) due now, balance on completion.` : '' }]
-          : [{ text: 'To go ahead, pick an option, sign below and send it back, or just reply to the message this came with. ' }, { text: dep ? `A ${dep}% deposit is payable on acceptance.` : '' }],
+          ? [{ text: `Accepted: ${tierName(accepted.tier)} option, ${fmtGBP(accepted.total)} inc VAT. `, bold: true, color: G }, { text: dep && !isService ? `Deposit of ${fmtGBP(accepted.total * dep / 100)} (${dep}%) due now, balance on completion.` : '' }]
+          : [{ text: 'To go ahead, pick an option, sign below and send it back, or just reply to the message this came with. ' }, { text: dep && !isService ? `A ${dep}% deposit is payable on acceptance.` : '' }],
         margin: [0, 0, 0, 10], lineHeight: 1.3,
       },
       {
         columns: [
           sigCell('Customer', accepted ? job.sign.customer : { name: '', img: '', at: null }),
-          { stack: [{ text: 'Option chosen', style: 'k', margin: [0, 0, 0, 4] }, { text: accepted ? accepted.tier.label : '   Good   /   Better   /   Best', margin: [0, 8, 0, 0], bold: !!accepted, color: accepted ? G : C.ink }] },
+          { stack: [{ text: 'Option chosen', style: 'k', margin: [0, 0, 0, 4] }, { text: accepted ? tierName(accepted.tier) : offered.map((o) => tierName(o.tier)).join('   /   '), margin: [0, 8, 0, 0], bold: !!accepted, color: accepted ? G : C.ink }] },
         ],
         columnGap: 30,
       },
