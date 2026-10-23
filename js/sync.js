@@ -59,6 +59,8 @@ export async function configureSync(settings) {
   let meta = (await db.get('kv', 'sync')) || {};
   // a different team than last time: start from scratch, and push everything on this phone up to it
   if (meta.team && meta.team !== cfg.team) meta = {};
+  // v2: the server copy carries the push time as updatedAt, so older phones need one full pull
+  if (!meta.v2) { meta = { ...meta, lastPull: 0, v2: true }; await db.put('kv', meta, 'sync'); }
   state.lastPull = meta.lastPull || 0;
   state.status = navigator.onLine ? 'idle' : 'offline';
   // anything that changed before sync was switched on goes up too
@@ -105,7 +107,7 @@ export async function flush() {
         await fetchJ(`deleted/${item.store}/${encodeURIComponent(item.id)}.json`, { method: 'PUT', body: JSON.stringify({ at: Date.now(), by: deviceId }) });
       } else {
         const row = await db.get(item.store, item.id);
-        if (row) await fetchJ(`${item.store}/${encodeURIComponent(item.id)}.json`, { method: 'PUT', body: JSON.stringify({ ...row, syncBy: deviceId, syncAt: Date.now() }) });
+        if (row) await fetchJ(`${item.store}/${encodeURIComponent(item.id)}.json`, { method: 'PUT', body: JSON.stringify({ ...row, updatedAt: Date.now(), syncBy: deviceId, syncAt: Date.now() }) });
       }
       outbox.delete(key);
       state.lastPush = Date.now(); state.error = '';
@@ -155,7 +157,7 @@ export async function pullNow() {
       } finally { applying = false; }
     }
     state.lastPull = startedAt; state.error = '';
-    await db.put('kv', { ...((await db.get('kv', 'sync')) || {}), lastPull: startedAt, seeded: true, team: cfg.team }, 'sync');
+    await db.put('kv', { ...((await db.get('kv', 'sync')) || {}), lastPull: startedAt, seeded: true, team: cfg.team, v2: true }, 'sync');
   } catch (e) {
     state.error = e.message;
   } finally {
