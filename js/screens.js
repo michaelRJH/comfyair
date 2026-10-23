@@ -20,7 +20,7 @@ import { onSync, syncState, isSyncOn } from './sync.js';
 import { getPay, setYardHere, allTimesheets, fmtMoney } from './timesheet.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.8.1';
+const VERSION = '1.8.2';
 
 // ---------- shared bits ----------
 

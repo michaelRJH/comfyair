@@ -56,13 +56,15 @@ export async function configureSync(settings) {
   clearInterval(pullTimer); pullTimer = null;
   if (!cfg) { state.status = 'off'; state.error = ''; emit(); return; }
   await loadDevice();
-  const meta = (await db.get('kv', 'sync')) || {};
+  let meta = (await db.get('kv', 'sync')) || {};
+  // a different team than last time: start from scratch, and push everything on this phone up to it
+  if (meta.team && meta.team !== cfg.team) meta = {};
   state.lastPull = meta.lastPull || 0;
   state.status = navigator.onLine ? 'idle' : 'offline';
   // anything that changed before sync was switched on goes up too
   if (!meta.seeded) {
     for (const store of STORES) for (const row of await db.all(store)) outbox.set(`${store}:${row.id}`, { store, id: row.id, at: Date.now() });
-    await db.put('kv', { ...meta, seeded: true }, 'sync');
+    await db.put('kv', { ...meta, seeded: true, team: cfg.team }, 'sync');
   }
   emit();
   pullTimer = setInterval(() => { if (document.visibilityState === 'visible') pullNow(); }, PULL_EVERY);
@@ -153,7 +155,7 @@ export async function pullNow() {
       } finally { applying = false; }
     }
     state.lastPull = startedAt; state.error = '';
-    await db.put('kv', { ...((await db.get('kv', 'sync')) || {}), lastPull: startedAt, seeded: true }, 'sync');
+    await db.put('kv', { ...((await db.get('kv', 'sync')) || {}), lastPull: startedAt, seeded: true, team: cfg.team }, 'sync');
   } catch (e) {
     state.error = e.message;
   } finally {
