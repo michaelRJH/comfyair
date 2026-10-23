@@ -9,8 +9,9 @@ import { renderPreview, shareAny, shareEmail, shareWhatsApp, saveFile, openFile 
 import { fmtDate, fmtDuration } from './util.js';
 import { go, cameFrom } from './router.js';
 
-export function SendTimesheet({ weekStart, done, settings }) {
-  const engineer = settings.currentEngineer;
+export function SendTimesheet({ weekStart, done, settings, eng }) {
+  const engineer = eng || settings.currentEngineer;
+  const theirs = !!eng && eng !== settings.currentEngineer;
   const pay = getPay(settings);
   const [week, setWeek] = useState(null);
   const [ts, setTs] = useState(null);
@@ -70,7 +71,7 @@ export function SendTimesheet({ weekStart, done, settings }) {
   ];
 
   return html`<div class="screen send">
-    <${TopBar} title=${done ? 'Timesheet signed' : 'Send timesheet'} sub=${week ? `w/c ${fmtDate(week.weekStart)}` : ''}
+    <${TopBar} title=${theirs ? `${engineer.split(' ')[0]}'s timesheet` : done ? 'Timesheet signed' : 'Send timesheet'} sub=${week ? `w/c ${fmtDate(week.weekStart)}` : ''}
       onBack=${() => (cameFrom() ? history.back() : go('/time', null, true))} />
     ${done && week && html`<div class="donebanner">
       <svg class="donebanner__mark" viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="23" /><path d="m15 27 7.5 7.5L38 19" /></svg>

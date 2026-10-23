@@ -1050,3 +1050,5 @@ p { margin: 0; }
 .hero__sync { display: inline-flex; align-items: center; gap: 4px; }
 .hero__sync.is-err { color: #FFC9C2; }
 @keyframes pulse { 50% { opacity: .35; } }
+.avatar--small { width: 40px; height: 40px; font-size: 13px; flex: none; }
+.flagcount { color: var(--fail); font-weight: 700; }

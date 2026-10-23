@@ -5,6 +5,7 @@ import { Icon, TopBar, Section, Sheet, ask, toast } from './ui.js';
 import { SECTIONS, setIn, checkJob } from './forms.js';
 import { JOB_TYPES, MAKES } from './schema.js';
 import { getJob, saveJob, deleteJob, duplicateJob, rememberFromJob, getSettings } from './store.js';
+import { isSyncOn } from './sync.js';
 import { buildPdf, loadPdfLib } from './pdf.js';
 import { renderPreview, shareAny, shareEmail, shareWhatsApp, saveFile, openFile, jobFile, shareJobFile } from './share.js';
 import { getPay } from './timesheet.js';
@@ -265,7 +266,7 @@ export function Send({ id, done, settings }) {
       </button>`)}
     </div>
     ${job && job.sentAt && html`<p class="send__sent"><${Icon} name="check" size=${16} /> Last sent ${fmtDate(new Date(job.sentAt).toISOString().slice(0, 10))}</p>`}
-    ${job && html`<button class="toapp" disabled=${!!busy} onClick=${() => run('toapp', async () => {
+    ${job && !isSyncOn() && html`<button class="toapp" disabled=${!!busy} onClick=${() => run('toapp', async () => {
         const sites = await allSites();
         const key = norm(job.site.address || job.site.name);
         const site = sites.find((x) => norm(x.address || x.name) === key) || null;

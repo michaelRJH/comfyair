@@ -28,7 +28,7 @@ export const shiftId = (engineer, date) => `${norm(engineer)}|${date}`;
 
 export const getShift = (engineer, date) => db.get('shifts', shiftId(engineer, date));
 export const allShifts = () => db.all('shifts');
-export const saveShift = (s) => { s.updatedAt = Date.now(); return db.put('shifts', s); };
+export const saveShift = async (s) => { s.updatedAt = Date.now(); await db.put('shifts', s); noteChange('shifts', s.id, true); };
 
 export const blankShift = (engineer, date) => ({ id: shiftId(engineer, date), engineer, date, segments: [], note: '', createdAt: Date.now() });
 

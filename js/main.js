@@ -57,7 +57,7 @@ function App() {
   else if (a === 'job' && b && c === 'send') { screen = html`<${Send} key=${b} id=${b} done=${route.query.done === '1'} settings=${settings} />`; tabs = false; }
   else if (a === 'job' && b) { screen = html`<${Editor} key=${b} id=${b} settings=${settings} />`; tabs = false; }
   else if (a === 'time') screen = html`<${TimeScreen} settings=${settings} />`;
-  else if (a === 'timesheet' && b && c === 'send') { screen = html`<${SendTimesheet} key=${b} weekStart=${b} done=${route.query.done === '1'} settings=${settings} />`; tabs = false; }
+  else if (a === 'timesheet' && b && c === 'send') { screen = html`<${SendTimesheet} key=${b + (route.query.eng || '')} weekStart=${b} eng=${route.query.eng || ''} done=${route.query.done === '1'} settings=${settings} />`; tabs = false; }
   else if (a === 'sites') screen = html`<${Sites} />`;
   else if (a === 'site' && b) screen = html`<${Site} key=${b} id=${b} />`;
   else if (a === 'settings') screen = html`<${Settings} settings=${settings} />`;

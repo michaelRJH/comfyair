@@ -23,6 +23,8 @@ let settingsCache = null;
 const listeners = new Set();
 export const onSettings = (fn) => (listeners.add(fn), () => listeners.delete(fn));
 
+export const settingsNow = () => settingsCache;
+
 export async function getSettings() {
   if (settingsCache) return settingsCache;
   const saved = (await db.get('kv', SETTINGS_KEY)) || {};

@@ -5,7 +5,7 @@
 import { db } from './db.js';
 import { uid, clone } from './util.js';
 
-const STORES = ['jobs', 'sites', 'timesheets'];
+const STORES = ['jobs', 'sites', 'timesheets', 'shifts'];
 const PUSH_DELAY = 20000;     // wait for the typing to stop before uploading a job
 const PULL_EVERY = 45000;     // while the app is open
 let cfg = null;               // { url, team }
@@ -181,7 +181,8 @@ export const RULES_JSON = `{
         ".write": true,
         "jobs": { ".indexOn": ["updatedAt"] },
         "sites": { ".indexOn": ["updatedAt"] },
-        "timesheets": { ".indexOn": ["updatedAt"] }
+        "timesheets": { ".indexOn": ["updatedAt"] },
+        "shifts": { ".indexOn": ["updatedAt"] }
       }
     }
   }

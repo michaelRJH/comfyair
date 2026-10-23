@@ -4,10 +4,10 @@ import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
 import { Icon, TopBar, Input, TextArea, Field, Sheet, Empty, ask, toast } from './ui.js';
 import { JOB_TYPES, TYPE_ORDER, jobTitle } from './schema.js';
 import {
-  allJobs, createJob, servicesDue, allSites, getSite, saveSite, deleteSite, saveSettings, importJobFile,
+  allJobs, createJob, servicesDue, allSites, settingsNow, getSite, saveSite, deleteSite, saveSettings, importJobFile,
   exportBackup, importBackup, jobsCSV, duplicateJob,
 } from './store.js';
-import { greeting, firstName, fmtLongToday, fmtDate, monthLabel, initials, todayISO, isStandalone, isIOS, norm, uid, safeFileName, vibrate, daysBetween } from './util.js';
+import { greeting, firstName, fmtLongToday, fmtDate, monthLabel, initials, todayISO, isStandalone, isIOS, norm, uid, safeFileName, vibrate, daysBetween, fmtDuration } from './util.js';
 import { go } from './router.js';
 import { saveFile, canShareFiles, unpackJobFromPdf } from './share.js';
 import { LISTS, removeFromList, removeCustomHazard } from './lists.js';
@@ -17,10 +17,10 @@ import { PriceSettings } from './quoteforms.js';
 import { QuotesBlock } from './pipeline.js';
 import { SyncSettings } from './syncsettings.js';
 import { onSync, syncState, isSyncOn } from './sync.js';
-import { getPay, setYardHere } from './timesheet.js';
+import { getPay, setYardHere, allTimesheets, fmtMoney } from './timesheet.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.8.0';
+const VERSION = '1.8.1';
 
 // ---------- shared bits ----------
 
@@ -36,7 +36,7 @@ export function JobRow({ job }) {
     <${TypeBadge} type=${job.type} />
     <span class="jobrow__main">
       <span class="jobrow__title">${jobTitle(job)}</span>
-      <span class="jobrow__sub">${job.importedFrom ? html`<span class="fromtag">from ${job.importedFrom.split(' ')[0]}</span> ` : ''}${where || t.label}</span>
+      <span class="jobrow__sub">${job.importedFrom ? html`<span class="fromtag">from ${job.importedFrom.split(' ')[0]}</span> ` : job.engineer && settingsNow() && norm(job.engineer) !== norm(settingsNow().currentEngineer) ? html`<span class="fromtag">${job.engineer.split(' ')[0]}</span> ` : ''}${where || t.label}</span>
     </span>
     <span class="jobrow__meta">
       <span class="jobrow__no">${job.jobNo}</span>
@@ -73,8 +73,10 @@ export function NewJobSheet({ open, onClose, prefill }) {
 export function Home({ settings }) {
   const [jobs, setJobs] = useState(null);
   const [sy, setSy] = useState(syncState());
-  useEffect(() => { allJobs().then(setJobs); }, []);
-  useEffect(() => onSync((st) => { setSy(st); if (st.changed) allJobs().then(setJobs); }), []);
+  const [sheetsIn, setSheetsIn] = useState([]);
+  const loadSheets = () => allTimesheets().then((all) => setSheetsIn(all.filter((t) => norm(t.engineer) !== norm(settings.currentEngineer)).sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0)).slice(0, 4)));
+  useEffect(() => { allJobs().then(setJobs); loadSheets(); }, []);
+  useEffect(() => onSync((st) => { setSy(st); if (st.changed) { allJobs().then(setJobs); loadSheets(); } }), []);
   const start = async (type) => {
     vibrate(12);
     const j = await createJob(type);
@@ -135,6 +137,20 @@ export function Home({ settings }) {
       </section>`}
 
       <${QuotesBlock} jobs=${jobs || []} settings=${settings} onChange=${() => allJobs().then(setJobs)} />
+
+      ${sheetsIn.length > 0 && html`<section class="block">
+        <h2 class="block__title">Timesheets in</h2>
+        <div class="list">
+          ${sheetsIn.map((t) => html`<button class="jobrow" key=${t.id} onClick=${() => go(`/timesheet/${t.weekStart}/send`, { eng: t.engineer })}>
+            <span class="avatar avatar--small">${initials(t.engineer)}</span>
+            <span class="jobrow__main">
+              <span class="jobrow__title">${firstName(t.engineer)}, week of ${fmtDate(t.weekStart)}</span>
+              <span class="jobrow__sub">${fmtDuration(t.totalMins)}${t.otMins ? `, ${fmtDuration(t.otMins)} overtime` : ''}${t.payTotal ? `, ${fmtMoney(t.payTotal)}` : ''}${t.flags ? html`, <b class="flagcount">${t.flags} flag${t.flags === 1 ? '' : 's'}</b>` : ''}</span>
+            </span>
+            <span class="jobrow__meta"><span class="jobrow__date">${fmtDate(new Date(t.submittedAt).toISOString().slice(0, 10))}</span></span>
+          </button>`)}
+        </div>
+      </section>`}
 
       ${due.length > 0 && html`<section class="block">
         <h2 class="block__title">Due for service</h2>
