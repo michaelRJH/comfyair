@@ -1,7 +1,7 @@
 // Offline support: keeps the whole app on the phone so it works in plant rooms with no signal.
 // Bump VERSION whenever any file changes so phones pick up the update.
 
-const VERSION = 'comfyair-v1.6.2';
+const VERSION = 'comfyair-v1.7.0';
 const FILES = [
   './',
   'index.html',
@@ -75,8 +75,22 @@ self.addEventListener('message', (e) => {
   if (e.data === 'skipWaiting') self.skipWaiting();
 });
 
+// A job file shared straight into the app (Android share sheet): stash it, then open the app to import it.
+const SHARE = 'comfyair-share';
 self.addEventListener('fetch', (e) => {
   const req = e.request;
+  if (req.method === 'POST' && new URL(req.url).pathname.endsWith('/share-target')) {
+    e.respondWith((async () => {
+      try {
+        const fd = await req.formData();
+        const files = fd.getAll('file');
+        const c = await caches.open(SHARE);
+        for (const f of files) await c.put(new Request('./shared/' + Date.now() + '-' + encodeURIComponent(f.name || 'job.json')), new Response(f, { headers: { 'Content-Type': 'application/json', 'X-Name': f.name || 'job.json' } }));
+      } catch (err) { /* nothing to stash */ }
+      return Response.redirect('./#/jobs?shared=1', 303);
+    })());
+    return;
+  }
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
     caches.match(req, { ignoreSearch: true }).then((hit) => {

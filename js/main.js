@@ -52,7 +52,7 @@ function App() {
   let screen;
   let tabs = true;
   if (!a) screen = html`<${Home} settings=${settings} />`;
-  else if (a === 'jobs') screen = html`<${Jobs} filter=${route.query.type} />`;
+  else if (a === 'jobs') screen = html`<${Jobs} filter=${route.query.type} shared=${route.query.shared === '1'} />`;
   else if (a === 'job' && b && c === 'send') { screen = html`<${Send} key=${b} id=${b} done=${route.query.done === '1'} settings=${settings} />`; tabs = false; }
   else if (a === 'job' && b) { screen = html`<${Editor} key=${b} id=${b} settings=${settings} />`; tabs = false; }
   else if (a === 'time') screen = html`<${TimeScreen} settings=${settings} />`;

@@ -164,7 +164,7 @@ export function jobFile(job, site, fromEngineer) {
 // Shares the job file through the phone's share sheet (WhatsApp, email, AirDrop...). Falls back to a download.
 export async function shareJobFile(file, job, toName) {
   const title = `Job ${job.jobNo} for the Comfyair app`;
-  const text = `Job ${job.jobNo}${job.client.name ? ', ' + job.client.name : ''}. Save this file, then open Comfyair and tap Import a job.`;
+  const text = `Job ${job.jobNo}${job.client.name ? ', ' + job.client.name : ''} for the Comfyair app. Android: tap the file, then Share, then Comfyair. iPhone: tap the file, Share, Save to Files, then in Comfyair tap Import on the Jobs screen.`;
   if (canShareFiles(file)) {
     try {
       await navigator.share({ files: [file], title, text });

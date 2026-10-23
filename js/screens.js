@@ -18,7 +18,7 @@ import { QuotesBlock } from './pipeline.js';
 import { getPay, setYardHere } from './timesheet.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.6.2';
+const VERSION = '1.7.0';
 
 // ---------- shared bits ----------
 
@@ -218,13 +218,36 @@ export async function importJobFromFiles(fileList, onDone) {
   }
 }
 
-export function Jobs({ filter }) {
+// Files shared into the app from another app (Android share sheet) are parked by the service worker.
+export async function takeSharedFiles() {
+  if (!('caches' in window)) return [];
+  const c = await caches.open('comfyair-share');
+  const keys = await c.keys();
+  const files = [];
+  for (const k of keys) {
+    const r = await c.match(k);
+    if (r) files.push(new File([await r.blob()], r.headers.get('X-Name') || 'job.json', { type: 'application/json' }));
+    await c.delete(k);
+  }
+  return files;
+}
+
+export function Jobs({ filter, shared }) {
   const [jobs, setJobs] = useState(null);
   const importRef = useRef();
   const [q, setQ] = useState('');
   const [f, setF] = useState(filter && JOB_TYPES[filter] ? filter : 'all');
   const [sheet, setSheet] = useState(false);
   useEffect(() => { allJobs().then(setJobs); }, []);
+  useEffect(() => {
+    if (!shared) return;
+    (async () => {
+      const files = await takeSharedFiles();
+      if (!files.length) return;
+      for (const file of files) await importJobFromFiles([file], () => allJobs().then(setJobs));
+      go('/jobs', null, true);
+    })();
+  }, [shared]);
 
   const term = norm(q);
   const list = (jobs || []).filter((j) => {
@@ -245,7 +268,7 @@ export function Jobs({ filter }) {
   return html`<div class="screen">
     <${TopBar} title="Jobs" sub=${jobs ? `${jobs.length} on this phone` : ''}
       right=${html`<button class="iconbtn" aria-label="Import a job" onClick=${() => importRef.current.click()}><${Icon} name="download" /></button>`} />
-    <input type="file" accept="application/json,.json" hidden ref=${importRef} onChange=${(e) => { importJobFromFiles(e.currentTarget.files, () => allJobs().then(setJobs)); e.currentTarget.value = ''; }} />
+    <input type="file" accept="*/*" hidden ref=${importRef} onChange=${(e) => { importJobFromFiles(e.currentTarget.files, () => allJobs().then(setJobs)); e.currentTarget.value = ''; }} />
     <div class="toolbar">
       <label class="searchbox">
         <${Icon} name="search" size=${20} />
@@ -497,8 +520,8 @@ export function Settings({ settings }) {
           <button class="setaction" onClick=${() => jobRef.current.click()}><${Icon} name="jobs" /><span><b>Import a job</b><small>A job file sent from another engineer's phone</small></span></button>
           <button class="setaction" onClick=${csv}><${Icon} name="sheet" /><span><b>Hours and miles spreadsheet</b><small>Every job with times, travel and mileage, for invoicing</small></span></button>
         </div>
-        <input type="file" accept="application/json,.json" hidden ref=${restoreRef} onChange=${(e) => { restore(e.currentTarget.files); e.currentTarget.value = ''; }} />
-        <input type="file" accept="application/json,.json" hidden ref=${jobRef} onChange=${(e) => { importJobFromFiles(e.currentTarget.files, (j) => go('/job/' + j.id + '/send')); e.currentTarget.value = ''; }} />
+        <input type="file" accept="*/*" hidden ref=${restoreRef} onChange=${(e) => { restore(e.currentTarget.files); e.currentTarget.value = ''; }} />
+        <input type="file" accept="*/*" hidden ref=${jobRef} onChange=${(e) => { importJobFromFiles(e.currentTarget.files, (j) => go('/job/' + j.id + '/send')); e.currentTarget.value = ''; }} />
       </section>
 
       <section class="setblock setblock--about">
