@@ -15,10 +15,12 @@ import { ClockCard } from './timescreen.js';
 import { ComfyPopup } from './mascot.js';
 import { PriceSettings } from './quoteforms.js';
 import { QuotesBlock } from './pipeline.js';
+import { SyncSettings } from './syncsettings.js';
+import { onSync, syncState, isSyncOn } from './sync.js';
 import { getPay, setYardHere } from './timesheet.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.7.0';
+const VERSION = '1.8.0';
 
 // ---------- shared bits ----------
 
@@ -70,7 +72,9 @@ export function NewJobSheet({ open, onClose, prefill }) {
 
 export function Home({ settings }) {
   const [jobs, setJobs] = useState(null);
+  const [sy, setSy] = useState(syncState());
   useEffect(() => { allJobs().then(setJobs); }, []);
+  useEffect(() => onSync((st) => { setSy(st); if (st.changed) allJobs().then(setJobs); }), []);
   const start = async (type) => {
     vibrate(12);
     const j = await createJob(type);
@@ -103,6 +107,7 @@ export function Home({ settings }) {
         <span><b>${thisWeek}</b> finished this week</span>
         <span><b>${drafts.length}</b> in progress</span>
         <span><b>${settings.nextJobNo}</b> next job no</span>
+        ${isSyncOn() && html`<span class=${'hero__sync' + (sy.error ? ' is-err' : '')}><${Icon} name="refresh" size=${13} /> ${sy.error ? 'sync problem' : sy.status === 'pulling' || sy.status === 'pushing' ? 'syncing' : sy.pending ? `${sy.pending} to send` : 'synced'}</span>`}
       </div>
     </header>
 
@@ -243,6 +248,7 @@ export function Jobs({ filter, shared }) {
   const [f, setF] = useState(filter && JOB_TYPES[filter] ? filter : 'all');
   const [sheet, setSheet] = useState(false);
   useEffect(() => { allJobs().then(setJobs); }, []);
+  useEffect(() => onSync((st) => { if (st.changed) allJobs().then(setJobs); }), []);
   useEffect(() => {
     if (!shared) return;
     (async () => {
@@ -483,6 +489,8 @@ export function Settings({ settings }) {
           <button class="addrow" onClick=${() => save({ ...s, engineers: [...s.engineers, { id: uid(), name: '', cert: '' }] })}><${Icon} name="plus" size=${18} /> Add engineer</button>
         </div>
       </section>
+
+      <${SyncSettings} settings=${s} save=${save} />
 
       <section class="setblock">
         <h2 class="setblock__title">Job numbers</h2>

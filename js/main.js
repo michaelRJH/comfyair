@@ -11,6 +11,7 @@ import { TimeScreen } from './timescreen.js';
 import { SendTimesheet } from './senddoc.js';
 import { ComfyPopup, useComfyOnce } from './mascot.js';
 import { firstName } from './util.js';
+import { configureSync } from './sync.js';
 
 const TABS = [
   { path: '/', label: 'Home', icon: 'home' },
@@ -38,8 +39,8 @@ function App() {
   const route = useRoute();
 
   useEffect(() => {
-    getSettings().then(setSettings);
-    return onSettings(setSettings);
+    getSettings().then((s) => { setSettings(s); configureSync(s); });
+    return onSettings((s) => { setSettings(s); configureSync(s); });
   }, []);
 
   const [comfy, hideComfy] = useComfyOnce(settings);

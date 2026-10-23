@@ -4,6 +4,7 @@ import { db } from './db.js';
 import { COMPANY_DEFAULT, newJob, JOB_TYPES } from './schema.js';
 import { uid, norm, todayISO, daysBetween, clone, onSiteMinutes } from './util.js';
 import { hasFix } from './geo.js';
+import { noteChange, noteDelete } from './sync.js';
 
 const SETTINGS_KEY = 'settings';
 
@@ -52,10 +53,11 @@ export const getJob = (id) => db.get('jobs', id);
 export async function saveJob(job) {
   job.updatedAt = Date.now();
   await db.put('jobs', job);
+  noteChange('jobs', job.id, job.status === 'complete');
   return job;
 }
 
-export const deleteJob = (id) => db.del('jobs', id);
+export const deleteJob = async (id) => { await db.del('jobs', id); noteDelete('jobs', id); };
 
 // Hands out the next job number and moves the counter on.
 export async function takeJobNo() {
@@ -125,8 +127,8 @@ export async function duplicateJob(src) {
 export const allClients = () => db.all('clients');
 export const allSites = () => db.all('sites');
 export const getSite = (id) => db.get('sites', id);
-export const saveSite = (s) => db.put('sites', s);
-export const deleteSite = (id) => db.del('sites', id);
+export const saveSite = async (s) => { s.updatedAt = Date.now(); await db.put('sites', s); noteChange('sites', s.id, true); };
+export const deleteSite = async (id) => { await db.del('sites', id); noteDelete('sites', id); };
 
 export async function rememberFromJob(job) {
   if (!job.client.name && !job.site.name && !job.site.address) return;
@@ -173,6 +175,7 @@ export async function rememberFromJob(job) {
   }
   site.updatedAt = Date.now();
   await db.put('sites', site);
+  noteChange('sites', site.id, true);
 }
 
 // Most recent finished job per site with a next service date, soonest first.
@@ -209,14 +212,14 @@ export async function importJobFile(data, { replace = false } = {}) {
     const sites = await allSites();
     const key = norm(data.site.address || data.site.name);
     const have = sites.find((x) => norm(x.address || x.name) === key);
-    if (!have) await db.put('sites', { ...clone(data.site), id: uid(), updatedAt: Date.now() });
+    if (!have) { const ns = { ...clone(data.site), id: uid(), updatedAt: Date.now() }; await db.put('sites', ns); noteChange('sites', ns.id, true); }
     else {
       const merged = { ...have, pin: have.pin && hasFix(have.pin) ? have.pin : data.site.pin || have.pin, units: [...have.units] };
       for (const u of data.site.units || []) {
         const k = norm(`${u.model}|${u.location}`);
         if (!merged.units.some((x) => norm(`${x.model}|${x.location}`) === k)) merged.units.push({ ...u, id: uid() });
       }
-      await db.put('sites', merged);
+      merged.updatedAt = Date.now(); await db.put('sites', merged); noteChange('sites', merged.id, true);
     }
   }
   if (job.status === 'complete') await rememberFromJob(job);

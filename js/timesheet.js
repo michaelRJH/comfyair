@@ -1,6 +1,7 @@
 // Clocking in and out, weeks, hours, pay and the honesty flags.
 
 import { db } from './db.js';
+import { noteChange } from './sync.js';
 import { getSettings, saveSettings, allJobs, allSites } from './store.js';
 import { uid, todayISO, toISODate, parseISO, nowHHMM, minutesBetween, onSiteMinutes, isManualOnSite, norm, fmtDuration } from './util.js';
 import { stamp, hasFix, nearness, describe, fmtMiles } from './geo.js';
@@ -75,7 +76,7 @@ export const notify = () => listeners.forEach((fn) => fn());
 export const timesheetId = (engineer, weekStart) => `${norm(engineer)}|${weekStart}`;
 export const getTimesheet = (engineer, weekStart) => db.get('timesheets', timesheetId(engineer, weekStart));
 export const allTimesheets = () => db.all('timesheets');
-export const saveTimesheet = (t) => { t.updatedAt = Date.now(); return db.put('timesheets', t); };
+export const saveTimesheet = async (t) => { t.updatedAt = Date.now(); await db.put('timesheets', t); noteChange('timesheets', t.id, true); };
 
 // ---------- weeks ----------
 
