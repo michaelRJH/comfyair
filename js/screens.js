@@ -9,7 +9,7 @@ import {
 } from './store.js';
 import { greeting, firstName, fmtLongToday, fmtDate, monthLabel, initials, todayISO, isStandalone, isIOS, norm, uid, safeFileName, vibrate, daysBetween } from './util.js';
 import { go } from './router.js';
-import { saveFile, canShareFiles } from './share.js';
+import { saveFile, canShareFiles, unpackJobFromPdf } from './share.js';
 import { LISTS, removeFromList, removeCustomHazard } from './lists.js';
 import { ClockCard } from './timescreen.js';
 import { ComfyPopup } from './mascot.js';
@@ -200,7 +200,11 @@ export async function importJobFromFiles(fileList, onDone) {
   const f = fileList && fileList[0];
   if (!f) return;
   try {
-    const data = JSON.parse(await f.text());
+    let data;
+    const fromPdf = await unpackJobFromPdf(f);
+    if (fromPdf && fromPdf.none) { toast('That PDF was made before the app could carry the job inside it. Ask for it to be sent again from the latest version.', { icon: 'alert', ms: 6000 }); return; }
+    if (fromPdf) data = fromPdf;
+    else data = JSON.parse(await f.text());
     if (data.app === 'comfyair' && !data.kind && data.jobs) {
       toast('That is a full backup. Use Restore from a backup in Settings.', { icon: 'alert', ms: 5000 });
       return;

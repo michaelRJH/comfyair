@@ -6,6 +6,8 @@ import {
 import { fmtDateUK, fmtDuration, safeFileName, onSiteMinutes, parseISO } from './util.js';
 import { hasFix, describe, mapsLink, statusLabel } from './geo.js';
 import { allSites } from './store.js';
+import { jobFile, packJob } from './share.js';
+import { norm } from './util.js';
 import { fmtMoney } from './timesheet.js';
 import { SYSTEM_KINDS, ROOM_USES, roomLoad, roomKw, priceQuote, fmtGBP, fmtGBP0, getPrice, runningCost, soundWords, migrateQuote } from './quote.js';
 
@@ -804,6 +806,12 @@ export async function buildPdf(job, settings) {
   const pdfMake = await loadPdfLib();
   try { sitesCache = await allSites(); } catch (e) { sitesCache = []; }
   const dd = docDefinition(job, settings);
+  // The whole job rides inside the PDF, so sending the PDF to another phone is enough to import it there.
+  try {
+    const key = norm(job.site.address || job.site.name);
+    const site = sitesCache.find((x) => norm(x.address || x.name) === key) || null;
+    dd.info.ComfyairJob = await packJob(jobFile(job, site, settings.currentEngineer));
+  } catch (e) { /* the PDF still works without it */ }
   const blob = await new Promise((resolve, reject) => {
     try {
       pdfMake.createPdf(dd).getBlob((b) => resolve(b));

@@ -161,6 +161,39 @@ export function jobFile(job, site, fromEngineer) {
   return new File([JSON.stringify(data)], jobFileName(job), { type: 'application/json' });
 }
 
+// ---------- job data inside a PDF ----------
+// Packs the job file as base64 (gzipped where the phone can) for the PDF's info dictionary, and finds it again on import.
+const b64 = (bytes) => { let bin = ''; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(bin); };
+const unb64 = (str) => { const bin = atob(str); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; };
+export async function packJob(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (typeof CompressionStream === 'function') {
+    try {
+      const gz = new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+      return 'CAZ1:' + b64(new Uint8Array(await new Response(gz).arrayBuffer()));
+    } catch (e) { /* fall through */ }
+  }
+  return 'CAJ1:' + b64(bytes);
+}
+export async function unpackJobFromPdf(file) {
+  const buf = await file.arrayBuffer();
+  const head = new TextDecoder('latin1').decode(buf.slice(0, 8));
+  if (!head.startsWith('%PDF')) return null;
+  const text = new TextDecoder('latin1').decode(buf);
+  // pdfkit writes the value as an indirect object: "/ComfyairJob 28 0 R" then "28 0 obj (CAZ1:...)"
+  let m = text.match(/\/ComfyairJob\s*\((CA[ZJ]1:[A-Za-z0-9+\/=]+)\)/);
+  if (!m) { const r = text.match(/\/ComfyairJob\s+(\d+)\s+0\s+R/); if (r) m = text.match(new RegExp('\\n' + r[1] + ' 0 obj\\s*\\((CA[ZJ]1:[A-Za-z0-9+\\/=]+)\\)')); }
+  if (!m) return { none: true };
+  const [kind, data] = m[1].split(':');
+  let bytes = unb64(data);
+  if (kind === 'CAZ1') {
+    if (typeof DecompressionStream !== 'function') throw new Error('This phone cannot unpack that PDF. Ask for the job file instead.');
+    const un = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    bytes = new Uint8Array(await new Response(un).arrayBuffer());
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 // Shares the job file through the phone's share sheet (WhatsApp, email, AirDrop...). Falls back to a download.
 export async function shareJobFile(file, job, toName) {
   const title = `Job ${job.jobNo} for the Comfyair app`;

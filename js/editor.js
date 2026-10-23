@@ -272,7 +272,7 @@ export function Send({ id, done, settings }) {
         return shareJobFile(jobFile(job, site, settings.currentEngineer), job, getPay(settings).toName);
       })}>
       <span class="toapp__icon">${busy === 'toapp' ? html`<span class="spinner spinner--small"></span>` : html`<${Icon} name="upload" size=${22} />`}</span>
-      <span class="toapp__text"><b>Send to ${getPay(settings).toName || 'the boss'}'s app</b><small>The whole job, photos and signatures included, so it lands in their Jobs list</small></span>
+      <span class="toapp__text"><b>Send to ${getPay(settings).toName || 'the boss'}'s app</b><small>Sends the job file. The PDF above carries the job inside it too, so sending that works just as well</small></span>
       <${Icon} name="chevron" size=${18} class="toapp__chev" />
     </button>`}
     <div class="preview">
