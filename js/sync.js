@@ -4,6 +4,42 @@
 
 import { db } from './db.js';
 import { uid, clone } from './util.js';
+import { newJob } from './schema.js';
+
+// Firebase drops empty lists and empty objects when it stores a row, so a sheet with no photos comes back with no
+// photos field at all. Fill anything missing from a fresh blank of the same type before it goes in the local store.
+function fillFrom(row, template) {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) return row;
+  for (const k of Object.keys(template || {})) {
+    const t = template[k];
+    if (row[k] === undefined || row[k] === null) { row[k] = clone(t); continue; }
+    if (Array.isArray(t)) { if (!Array.isArray(row[k])) row[k] = Object.values(row[k] || {}); continue; }
+    if (t && typeof t === 'object') { if (typeof row[k] !== 'object') row[k] = clone(t); else fillFrom(row[k], t); }
+  }
+  return row;
+}
+export function repairRow(store, row) {
+  if (store === 'jobs') {
+    const base = newJob(row.type || 'service', { jobNo: row.jobNo, engineer: row.engineer });
+    // units lists on the blank are seeded with one blank unit; a synced VRF sheet with real units must keep its own
+    if (row.data && Array.isArray(row.data.units)) base.data.units = [];
+    return fillFrom(row, base);
+  }
+  if (store === 'sites') return fillFrom(row, { units: [], pin: null, name: '', address: '', clientName: '' });
+  if (store === 'shifts') return fillFrom(row, { segments: [], note: '' });
+  if (store === 'timesheets') return fillFrom(row, { sign: { name: '', img: '', at: null } });
+  return row;
+}
+// One pass over what's already on the phone, for rows that arrived before this fix.
+export async function repairLocal() {
+  const meta = (await db.get('kv', 'sync')) || {};
+  if (meta.repaired) return;
+  applying = true;
+  try {
+    for (const store of STORES) for (const row of await db.all(store)) { if (row.arrivedAt || row.importedAt) await db.put(store, repairRow(store, row)); }
+  } finally { applying = false; }
+  await db.put('kv', { ...meta, repaired: true }, 'sync');
+}
 
 const STORES = ['jobs', 'sites', 'timesheets', 'shifts'];
 const PUSH_DELAY = 20000;     // wait for the typing to stop before uploading a job
@@ -56,6 +92,7 @@ export async function configureSync(settings) {
   clearInterval(pullTimer); pullTimer = null;
   if (!cfg) { state.status = 'off'; state.error = ''; emit(); return; }
   await loadDevice();
+  await repairLocal();
   let meta = (await db.get('kv', 'sync')) || {};
   // a different team than last time: start from scratch, and push everything on this phone up to it
   if (meta.team && meta.team !== cfg.team) meta = {};
@@ -140,7 +177,7 @@ export async function reconcile() {
         const row = await fetchJ(`${store}/${encodeURIComponent(id)}.json`);
         if (!row || !row.id) continue;
         applying = true;
-        try { const clean = clone(row); delete clean.syncBy; delete clean.syncAt; if (store === 'jobs') clean.arrivedAt = Date.now(); await db.put(store, clean); fetched++; } finally { applying = false; }
+        try { const clean = repairRow(store, clone(row)); delete clean.syncBy; delete clean.syncAt; if (store === 'jobs') clean.arrivedAt = Date.now(); await db.put(store, clean); fetched++; } finally { applying = false; }
       }
     }
     state.teamCounts = counts; state.error = '';
@@ -168,7 +205,7 @@ export async function pullNow() {
           if (row.syncBy === deviceId) continue;
           const local = await db.get(store, row.id);
           if (local && (local.updatedAt || 0) >= (row.updatedAt || 0)) continue;
-          const clean = clone(row); delete clean.syncBy; delete clean.syncAt;
+          const clean = repairRow(store, clone(row)); delete clean.syncBy; delete clean.syncAt;
           if (store === 'jobs' && !local) clean.arrivedAt = Date.now();
           await db.put(store, clean);
           changed++;
