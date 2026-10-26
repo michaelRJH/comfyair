@@ -70,13 +70,14 @@ export async function configureSync(settings) {
   }
   emit();
   pullTimer = setInterval(() => { if (document.visibilityState === 'visible') pullNow(); }, PULL_EVERY);
-  pullNow().then(flush);
+  pullNow().then(flush).then(reconcile);
 }
 
 if (typeof window !== 'undefined') {
   window.addEventListener('online', () => { if (cfg) { state.status = 'idle'; emit(); pullNow().then(flush); } });
   window.addEventListener('offline', () => { if (cfg) { state.status = 'offline'; emit(); } });
-  document.addEventListener('visibilitychange', () => { if (cfg && document.visibilityState === 'visible') pullNow().then(flush); });
+  let lastReconcile = 0;
+  document.addEventListener('visibilitychange', () => { if (cfg && document.visibilityState === 'visible') pullNow().then(flush).then(() => { if (Date.now() - lastReconcile > 30 * 60000) { lastReconcile = Date.now(); reconcile(); } }); });
 }
 
 // ---------- push ----------
@@ -112,12 +113,40 @@ export async function flush() {
       outbox.delete(key);
       state.lastPush = Date.now(); state.error = '';
     } catch (e) {
-      state.error = e.message; state.status = 'idle'; emit();
-      clearTimeout(pushTimer); pushTimer = setTimeout(flush, 60000);
-      return;
+      // one bad row must not block the rest: note it, move on, try again later
+      state.error = e.message.includes('Failed to fetch') ? 'No connection to the database' : e.message;
+      if (e.message.includes('Failed to fetch')) break;
     }
   }
+  if (outbox.size) { clearTimeout(pushTimer); pushTimer = setTimeout(flush, 60000); }
   state.status = 'idle'; emit();
+}
+
+// Belt and braces: compare what the team has with what this phone has, by id only (cheap), and fetch anything missing.
+// Catches rows pushed by phones on older versions, or anything a timed pull skipped.
+export async function reconcile() {
+  if (!cfg || !navigator.onLine) return 0;
+  let fetched = 0;
+  const counts = {};
+  try {
+    for (const store of STORES) {
+      const keys = await fetchJ(`${store}.json?shallow=true`);
+      const ids = keys ? Object.keys(keys) : [];
+      counts[store] = ids.length;
+      const local = new Set((await db.all(store)).map((r) => r.id));
+      const gone = (await fetchJ(`deleted/${store}.json?shallow=true`).catch(() => null)) || {};
+      for (const id of ids) {
+        if (local.has(id) || gone[id]) continue;
+        const row = await fetchJ(`${store}/${encodeURIComponent(id)}.json`);
+        if (!row || !row.id) continue;
+        applying = true;
+        try { const clean = clone(row); delete clean.syncBy; delete clean.syncAt; await db.put(store, clean); fetched++; } finally { applying = false; }
+      }
+    }
+    state.teamCounts = counts; state.error = '';
+  } catch (e) { state.error = e.message; }
+  state.changed = fetched; emit();
+  return fetched;
 }
 
 // ---------- pull ----------

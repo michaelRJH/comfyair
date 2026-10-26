@@ -2,7 +2,7 @@
 
 import { html, useState, useEffect } from '../vendor/preact-htm.js';
 import { Icon, Input, TextArea, Toggle, Sheet, ask, toast } from './ui.js';
-import { onSync, syncState, newTeamCode, parseSetup, testSync, pullNow, flush, RULES_JSON } from './sync.js';
+import { onSync, syncState, newTeamCode, parseSetup, testSync, pullNow, flush, reconcile, RULES_JSON } from './sync.js';
 import { fmtDate, vibrate } from './util.js';
 
 const ago = (t) => { if (!t) return 'never'; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : fmtDate(new Date(t).toISOString().slice(0, 10)); };
@@ -43,8 +43,8 @@ export function SyncSettings({ settings, save }) {
       <div class="syncstat">
         <span class=${'syncstat__dot is-' + (st.error ? 'err' : st.status)}></span>
         <span class="syncstat__text"><b>${st.error ? 'Problem syncing' : st.status === 'offline' ? 'Offline, will catch up' : st.status === 'pushing' || st.status === 'pulling' ? 'Syncing' : 'On'}</b>
-          <small>${st.error ? st.error : `Last checked ${ago(st.lastPull)}${st.pending ? `, ${st.pending} waiting to go up` : ''}`}</small></span>
-        <button class="btn btn--small btn--soft" onClick=${async () => { const n = await pullNow(); await flush(); toast(n ? `${n} update${n === 1 ? '' : 's'} came in` : 'Up to date', { icon: 'check' }); }}><${Icon} name="refresh" size=${16} /> Sync now</button>
+          <small>${st.error ? st.error : `Last checked ${ago(st.lastPull)}${st.pending ? `, ${st.pending} waiting to go up` : ''}${st.teamCounts ? `. Team has ${st.teamCounts.jobs || 0} job${st.teamCounts.jobs === 1 ? '' : 's'}` : ''}`}</small></span>
+        <button class="btn btn--small btn--soft" onClick=${async () => { const n = await pullNow(); await flush(); const m = await reconcile(); const tot = n + m; toast(syncState().error ? syncState().error : tot ? `${tot} update${tot === 1 ? '' : 's'} came in` : 'Up to date', { icon: syncState().error ? 'alert' : 'check', ms: 4000 }); }}><${Icon} name="refresh" size=${16} /> Sync now</button>
       </div>
       <p class="hint">Jobs, sites and timesheets on this phone go up to the team as they change, and the other phones' work comes down. Finished jobs go straight away; drafts a few seconds after you stop typing.</p>
       <div class="setactions">
