@@ -33,12 +33,12 @@ export function repairRow(store, row) {
 // One pass over what's already on the phone, for rows that arrived before this fix.
 export async function repairLocal() {
   const meta = (await db.get('kv', 'sync')) || {};
-  if (meta.repaired) return;
+  if (meta.repaired2) return;
   applying = true;
   try {
-    for (const store of STORES) for (const row of await db.all(store)) { if (row.arrivedAt || row.importedAt) await db.put(store, repairRow(store, row)); }
+    for (const store of STORES) for (const row of await db.all(store)) await db.put(store, repairRow(store, row));
   } finally { applying = false; }
-  await db.put('kv', { ...meta, repaired: true }, 'sync');
+  await db.put('kv', { ...meta, repaired2: true }, 'sync');
 }
 
 const STORES = ['jobs', 'sites', 'timesheets', 'shifts'];

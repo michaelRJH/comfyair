@@ -265,7 +265,7 @@ function serviceContent(job) {
     H('Work carried out'),
     textBox(d.workDone, 'Not recorded'),
   ];
-  if (d.materials.filter((m) => m.item).length) {
+  if ((d.materials || []).filter((m) => m.item).length) {
     out.push(H('Materials'), {
       table: {
         widths: ['*', 60],
