@@ -205,6 +205,7 @@ export const blankSystem = (kind = 'split') => ({
 });
 
 export const TEMPLATES = [
+  { id: 'quick', label: 'Quick price', blurb: 'One room, no photos, a price in 30 seconds. Firm it up later.', kind: 'install', quick: true, systems: [{ kind: 'split', use: 'living' }] },
   { id: 'domestic-single', label: 'Home, single room', blurb: 'One wall unit, one outdoor. The everyday job.', kind: 'install', systems: [{ kind: 'split', use: 'living' }] },
   { id: 'domestic-multi', label: 'Home, several rooms', blurb: 'Two or three rooms off one outdoor unit.', kind: 'install', systems: [{ kind: 'multi', use: 'bedroom', n: 2 }] },
   { id: 'office', label: 'Office or shop', blurb: 'Cassettes or wall units, commercial build-up.', kind: 'install', systems: [{ kind: 'split', use: 'office', type: 'Cassette' }] },
@@ -218,6 +219,7 @@ export const TEMPLATES = [
 export function applyTemplate(q, t) {
   q.template = t.id;
   q.kind = t.kind;
+  q.quick = !!t.quick;
   if (t.kind === 'install') {
     q.systems = t.systems.map((s, i) => {
       const sys = blankSystem(s.kind);

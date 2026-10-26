@@ -1052,3 +1052,18 @@ p { margin: 0; }
 @keyframes pulse { 50% { opacity: .35; } }
 .avatar--small { width: 40px; height: 40px; font-size: 13px; flex: none; }
 .flagcount { color: var(--fail); font-weight: 700; }
+
+/* ---------- polish: badges, guide, advanced ---------- */
+.tabbar__btn { position: relative; }
+.tabbar__badge { position: absolute; top: 4px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--orange); color: var(--navy-deep); font-size: 11px; font-weight: 800; display: grid; place-items: center; }
+.newtag { display: inline-block; font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--navy-deep); background: var(--orange); padding: 1px 6px; border-radius: 6px; vertical-align: 2px; }
+.guide { list-style: none; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; gap: 12px; counter-reset: g; }
+.guide li { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; }
+.guide li::before { counter-increment: g; content: counter(g); width: 30px; height: 30px; border-radius: 50%; background: var(--navy-tint); color: var(--navy); font-weight: 800; display: grid; place-items: center; }
+.guide li b { display: block; font-size: 15px; color: var(--navy-deep); margin-bottom: 2px; }
+.guide li span { grid-column: 2; font-size: 14px; color: var(--muted); line-height: 1.4; }
+.setblock--details summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+.setblock--details summary::before { content: ''; width: 8px; height: 8px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); margin-right: 4px; transition: transform .15s; }
+.setblock--details[open] summary::before { transform: rotate(45deg); }
+.setblock--details summary::-webkit-details-marker { display: none; }
+.setblock--details > :not(summary) { margin-top: 10px; }

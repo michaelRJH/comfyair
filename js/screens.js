@@ -1,7 +1,7 @@
 // Home, Jobs, Sites, Settings and first-run screens.
 
 import { html, useState, useEffect, useRef } from '../vendor/preact-htm.js';
-import { Icon, TopBar, Input, TextArea, Field, Sheet, Empty, ask, toast } from './ui.js';
+import { Icon, TopBar, Input, TextArea, Field, Sheet, Empty, Toggle, ask, toast } from './ui.js';
 import { JOB_TYPES, TYPE_ORDER, jobTitle } from './schema.js';
 import {
   allJobs, createJob, servicesDue, allSites, settingsNow, getSite, saveSite, deleteSite, saveSettings, importJobFile,
@@ -16,11 +16,11 @@ import { ComfyPopup } from './mascot.js';
 import { PriceSettings } from './quoteforms.js';
 import { QuotesBlock } from './pipeline.js';
 import { SyncSettings } from './syncsettings.js';
-import { onSync, syncState, isSyncOn } from './sync.js';
+import { onSync, syncState, isSyncOn, seenJobsAt, markJobsSeen } from './sync.js';
 import { getPay, setYardHere, allTimesheets, fmtMoney } from './timesheet.js';
 import { hasFix, statusLabel, stamp, mapsLink } from './geo.js';
 
-const VERSION = '1.8.4';
+const VERSION = '1.9.0';
 
 // ---------- shared bits ----------
 
@@ -29,13 +29,16 @@ export function TypeBadge({ type, size = 'md' }) {
   return html`<span class=${`tbadge tbadge--${t.tone} tbadge--${size}`}><${Icon} name=${t.icon} size=${size === 'lg' ? 28 : 20} /></span>`;
 }
 
-export function JobRow({ job }) {
+// The boss's phone gets a different Home order. Elliott's by default, and anyone can flip it in Settings.
+export const isBoss = (s) => (s.isBoss === undefined ? /^elliott/i.test(s.currentEngineer || '') : !!s.isBoss);
+
+export function JobRow({ job, fresh }) {
   const t = JOB_TYPES[job.type];
   const where = job.type === 'rams' ? [job.client.name, job.site.name || job.site.address].filter(Boolean).join(', ') : job.site.name || job.site.address;
   return html`<button class="jobrow" onClick=${() => go(job.status === 'complete' ? `/job/${job.id}/send` : `/job/${job.id}`)}>
     <${TypeBadge} type=${job.type} />
     <span class="jobrow__main">
-      <span class="jobrow__title">${jobTitle(job)}</span>
+      <span class="jobrow__title">${fresh && html`<span class="newtag">New</span> `}${jobTitle(job)}</span>
       <span class="jobrow__sub">${job.importedFrom ? html`<span class="fromtag">from ${job.importedFrom.split(' ')[0]}</span> ` : job.engineer && settingsNow() && norm(job.engineer) !== norm(settingsNow().currentEngineer) ? html`<span class="fromtag">${job.engineer.split(' ')[0]}</span> ` : ''}${where || t.label}</span>
     </span>
     <span class="jobrow__meta">
@@ -74,6 +77,9 @@ export function Home({ settings }) {
   const [jobs, setJobs] = useState(null);
   const [sy, setSy] = useState(syncState());
   const [sheetsIn, setSheetsIn] = useState([]);
+  const [guide, setGuide] = useState(false);
+  useEffect(() => { if (!settings.sawGuide) { const t = setTimeout(async () => { const s = settingsNow() || settings; if (!s.sawGuide) setGuide(true); }, 2500); return () => clearTimeout(t); } }, []);
+  const closeGuide = () => { setGuide(false); saveSettings({ ...settings, sawGuide: true }); };
   const loadSheets = () => allTimesheets().then((all) => setSheetsIn(all.filter((t) => norm(t.engineer) !== norm(settings.currentEngineer)).sort((a, b) => (b.submittedAt || 0) - (a.submittedAt || 0)).slice(0, 4)));
   useEffect(() => { allJobs().then(setJobs); loadSheets(); }, []);
   useEffect(() => onSync((st) => { setSy(st); if (st.changed) { allJobs().then(setJobs); loadSheets(); } }), []);
@@ -92,6 +98,74 @@ export function Home({ settings }) {
   const bookNext = async (j) => {
     const n = await duplicateJob(j);
     go(`/job/${n.id}`);
+  };
+  const remind = (j) => {
+    vibrate();
+    const who = (j.client.contact || j.client.name || '').split(' ')[0];
+    const text = `Hi ${who}, ${firstName(settings.currentEngineer)} from Comfyair. The air conditioning at ${j.site.name || j.site.address} is due its service around ${fmtDate(j.nextService)}. Shall we book it in? Just reply with a day that suits.`;
+    const phone = (j.client.phone || '').replace(/[^\d+]/g, '').replace(/^0/, '44').replace(/^\+/, '');
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
+  // Home is ordered for whoever holds the phone: the boss sees what's come in first, an engineer sees Clock in and Start a job first.
+  const blocks = {
+    clock: html`<section class="block" key="clock"><${ClockCard} engineer=${settings.currentEngineer} compact /></section>`,
+    start: html`<section class="block" key="start">
+        <h2 class="block__title">Start a job</h2>
+        <div class="starts">
+          ${TYPE_ORDER.map((k) => {
+            const t = JOB_TYPES[k];
+            return html`<button class=${'start tone-' + t.tone} onClick=${() => start(k)}>
+              <${TypeBadge} type=${k} size="lg" />
+              <span class="start__label">${t.label}</span>
+              <span class="start__blurb">${t.blurb}</span>
+            </button>`;
+          })}
+        </div>
+      </section>`,
+    drafts: drafts.length > 0 && html`<section class="block" key="drafts">
+        <h2 class="block__title">Carry on</h2>
+        <div class="list">${drafts.map((j) => html`<${JobRow} key=${j.id} job=${j} />`)}</div>
+      </section>`,
+    quotes: html`<${QuotesBlock} key="quotes" jobs=${jobs || []} settings=${settings} onChange=${() => allJobs().then(setJobs)} />`,
+    sheets: sheetsIn.length > 0 && html`<section class="block" key="sheets">
+        <h2 class="block__title">Timesheets in</h2>
+        <div class="list">
+          ${sheetsIn.map((t) => html`<button class="jobrow" key=${t.id} onClick=${() => go(`/timesheet/${t.weekStart}/send`, { eng: t.engineer })}>
+            <span class="avatar avatar--small">${initials(t.engineer)}</span>
+            <span class="jobrow__main">
+              <span class="jobrow__title">${firstName(t.engineer)}, week of ${fmtDate(t.weekStart)}</span>
+              <span class="jobrow__sub">${fmtDuration(t.totalMins)}${t.otMins ? `, ${fmtDuration(t.otMins)} overtime` : ''}${t.payTotal ? `, ${fmtMoney(t.payTotal)}` : ''}${t.flags ? html`, <b class="flagcount">${t.flags} flag${t.flags === 1 ? '' : 's'}</b>` : ''}</span>
+            </span>
+            <span class="jobrow__meta"><span class="jobrow__date">${fmtDate(new Date(t.submittedAt).toISOString().slice(0, 10))}</span></span>
+          </button>`)}
+        </div>
+      </section>`,
+    due: due.length > 0 && html`<section class="block" key="due">
+        <h2 class="block__title">Due for service</h2>
+        <div class="list">
+          ${due.map(({ job: j, days }) => html`<div class="duerow" key=${j.id}>
+            <span class=${'duerow__when' + (days < 0 ? ' is-late' : days <= 14 ? ' is-soon' : '')}>
+              <b>${days < 0 ? Math.abs(days) : days}</b><small>${days < 0 ? 'days late' : days === 1 ? 'day' : 'days'}</small>
+            </span>
+            <span class="duerow__main">
+              <span class="jobrow__title">${j.client.name || j.site.name}</span>
+              <span class="jobrow__sub">${j.site.name || j.site.address}, due ${fmtDate(j.nextService)}</span>
+            </span>
+            ${j.client.phone && html`<button class="iconbtn iconbtn--soft" aria-label="Remind the customer on WhatsApp" onClick=${() => remind(j)}><${Icon} name="chat" size=${18} /></button>`}
+            <button class="btn btn--small btn--soft" onClick=${() => bookNext(j)}>Start</button>
+          </div>`)}
+        </div>
+      </section>`,
+    recent: html`<section class="block" key="recent">
+        <div class="block__row">
+          <h2 class="block__title">Recently finished</h2>
+          ${recent.length > 0 && html`<button class="link" onClick=${() => go('/jobs')}>All jobs</button>`}
+        </div>
+        ${jobs && recent.length === 0
+          ? html`<p class="block__empty">Finished jobs show here, ready to send again if a customer asks.</p>`
+          : html`<div class="list">${recent.map((j) => html`<${JobRow} key=${j.id} job=${j} />`)}</div>`}
+      </section>`,
   };
 
   return html`<div class="screen home">
@@ -114,72 +188,34 @@ export function Home({ settings }) {
     </header>
 
     <div class="home__body">
-      <section class="block">
-        <${ClockCard} engineer=${settings.currentEngineer} compact />
-      </section>
-      <section class="block">
-        <h2 class="block__title">Start a job</h2>
-        <div class="starts">
-          ${TYPE_ORDER.map((k) => {
-            const t = JOB_TYPES[k];
-            return html`<button class=${'start tone-' + t.tone} onClick=${() => start(k)}>
-              <${TypeBadge} type=${k} size="lg" />
-              <span class="start__label">${t.label}</span>
-              <span class="start__blurb">${t.blurb}</span>
-            </button>`;
-          })}
-        </div>
-      </section>
-
-      ${drafts.length > 0 && html`<section class="block">
-        <h2 class="block__title">Carry on</h2>
-        <div class="list">${drafts.map((j) => html`<${JobRow} key=${j.id} job=${j} />`)}</div>
-      </section>`}
-
-      <${QuotesBlock} jobs=${jobs || []} settings=${settings} onChange=${() => allJobs().then(setJobs)} />
-
-      ${sheetsIn.length > 0 && html`<section class="block">
-        <h2 class="block__title">Timesheets in</h2>
-        <div class="list">
-          ${sheetsIn.map((t) => html`<button class="jobrow" key=${t.id} onClick=${() => go(`/timesheet/${t.weekStart}/send`, { eng: t.engineer })}>
-            <span class="avatar avatar--small">${initials(t.engineer)}</span>
-            <span class="jobrow__main">
-              <span class="jobrow__title">${firstName(t.engineer)}, week of ${fmtDate(t.weekStart)}</span>
-              <span class="jobrow__sub">${fmtDuration(t.totalMins)}${t.otMins ? `, ${fmtDuration(t.otMins)} overtime` : ''}${t.payTotal ? `, ${fmtMoney(t.payTotal)}` : ''}${t.flags ? html`, <b class="flagcount">${t.flags} flag${t.flags === 1 ? '' : 's'}</b>` : ''}</span>
-            </span>
-            <span class="jobrow__meta"><span class="jobrow__date">${fmtDate(new Date(t.submittedAt).toISOString().slice(0, 10))}</span></span>
-          </button>`)}
-        </div>
-      </section>`}
-
-      ${due.length > 0 && html`<section class="block">
-        <h2 class="block__title">Due for service</h2>
-        <div class="list">
-          ${due.map(({ job: j, days }) => html`<div class="duerow" key=${j.id}>
-            <span class=${'duerow__when' + (days < 0 ? ' is-late' : days <= 14 ? ' is-soon' : '')}>
-              <b>${days < 0 ? Math.abs(days) : days}</b><small>${days < 0 ? 'days late' : days === 1 ? 'day' : 'days'}</small>
-            </span>
-            <span class="duerow__main">
-              <span class="jobrow__title">${j.client.name || j.site.name}</span>
-              <span class="jobrow__sub">${j.site.name || j.site.address}, due ${fmtDate(j.nextService)}</span>
-            </span>
-            <button class="btn btn--small btn--soft" onClick=${() => bookNext(j)}>Start</button>
-          </div>`)}
-        </div>
-      </section>`}
-
-      <section class="block">
-        <div class="block__row">
-          <h2 class="block__title">Recently finished</h2>
-          ${recent.length > 0 && html`<button class="link" onClick=${() => go('/jobs')}>All jobs</button>`}
-        </div>
-        ${jobs && recent.length === 0
-          ? html`<p class="block__empty">Finished jobs show here, ready to send again if a customer asks.</p>`
-          : html`<div class="list">${recent.map((j) => html`<${JobRow} key=${j.id} job=${j} />`)}</div>`}
-      </section>
+      ${(isBoss(settings) ? ['sheets', 'quotes', 'due', 'clock', 'start', 'drafts', 'recent'] : ['clock', 'start', 'drafts', 'due', 'recent', 'quotes', 'sheets']).map((k) => blocks[k])}
       <${InstallHint} />
+      <${Guide} open=${guide} onClose=${closeGuide} boss=${isBoss(settings)} />
     </div>
   </div>`;
+}
+
+// Sixty-second tour. Shown once after a phone is set up, and from Settings any time.
+export function Guide({ open, onClose, boss }) {
+  const steps = boss ? [
+    ['Jobs arrive by themselves', 'Anything Archie finishes lands in Jobs with a New tag, and his timesheets show under Timesheets in on Home. Nothing to import.'],
+    ['Quotes', 'Tap Quote on Home, pick what you are quoting, put the room sizes in. It prices three options and makes the proposal PDF. Put your real prices in under Settings, Quotes and prices, first.'],
+    ['Chasing', 'Home shows quotes out with customers and nudges you after five days. The WhatsApp button sends a ready-written chase.'],
+    ['Services due', 'When a job sheet has a next service date, it shows on Home as it comes up. WhatsApp the customer a reminder or start the job from there.'],
+    ['Timesheets', 'Open one under Timesheets in. Every clock in, clock out, arrived and left is stamped with where the phone was, and anything that does not add up is flagged.'],
+    ['Sending a PDF', 'Open any finished job and tap Email, WhatsApp or Share. The PDF is made on the phone, so it works with no signal.'],
+  ] : [
+    ['Clock in', 'Tap Clock in on Home when you start, Clock out when you finish. Each tap records where the phone is at that moment, nothing in between.'],
+    ['Start a job', 'Pick the sheet type on Home. Everything saves as you go, so you can leave it and come back. Tap Arrived and Left on the job for the site times.'],
+    ['Photos and signatures', 'Photos go on the sheet from the camera. The customer signs on the screen with a finger.'],
+    ['Finish and send', 'Tap Finish job. It checks for anything missing, makes the PDF, and you send it by WhatsApp or email. The boss gets the job automatically too.'],
+    ['Timesheet', 'On Friday open the Time tab, check the week, tap Sign and send. The boss sees it straight away.'],
+    ['No signal', 'The whole app works offline. It catches up with the team when you are back in range.'],
+  ];
+  return html`<${Sheet} open=${open} onClose=${onClose} title="How the app works" tall>
+    <ol class="guide">${steps.map(([t, b]) => html`<li key=${t}><b>${t}</b><span>${b}</span></li>`)}</ol>
+    <button class="btn btn--primary btn--block" onClick=${onClose}>Got it</button>
+  </${Sheet}>`;
 }
 
 function InstallHint() {
@@ -212,6 +248,7 @@ function InstallHint() {
 
 const FILTERS = [
   { id: 'all', label: 'All' },
+  { id: 'mine', label: 'Mine' },
   { id: 'draft', label: 'Drafts' },
   ...TYPE_ORDER.map((k) => ({ id: k, label: JOB_TYPES[k].label })),
 ];
@@ -259,6 +296,8 @@ export async function takeSharedFiles() {
 
 export function Jobs({ filter, shared }) {
   const [jobs, setJobs] = useState(null);
+  const [seenAt, setSeenAt] = useState(Infinity);
+  useEffect(() => { seenJobsAt().then((t) => { setSeenAt(t); markJobsSeen(); }); }, []);
   const importRef = useRef();
   const [q, setQ] = useState('');
   const [f, setF] = useState(filter && JOB_TYPES[filter] ? filter : 'all');
@@ -278,6 +317,7 @@ export function Jobs({ filter, shared }) {
   const term = norm(q);
   const list = (jobs || []).filter((j) => {
     if (f === 'draft' && j.status === 'complete') return false;
+    if (f === 'mine' && settingsNow() && norm(j.engineer || '') !== norm(settingsNow().currentEngineer)) return false;
     if (JOB_TYPES[f] && j.type !== f) return false;
     if (!term) return true;
     const hay = norm([j.jobNo, j.client.name, j.site.name, j.site.address, j.engineer, j.data?.ms?.project].join(' '));
@@ -311,7 +351,7 @@ export function Jobs({ filter, shared }) {
         : html`<${Empty} icon="search" title="Nothing matches" body="Try a different search or filter." />`)}
       ${groups.map((g) => html`<section class="block" key=${g.m}>
         <h2 class="block__title block__title--month">${g.m}</h2>
-        <div class="list">${g.items.map((j) => html`<${JobRow} key=${j.id} job=${j} />`)}</div>
+        <div class="list">${g.items.map((j) => html`<${JobRow} key=${j.id} job=${j} fresh=${(j.arrivedAt || 0) > seenAt} />`)}</div>
       </section>`)}
     </div>
     <button class="fab" onClick=${() => setSheet(true)} aria-label="Start a job"><${Icon} name="plus" size=${26} stroke=${2.2} /><span>New job</span></button>
@@ -478,6 +518,7 @@ export function Settings({ settings }) {
   };
 
   const mb = stats && stats.used != null ? (stats.used / 1048576).toFixed(1) : null;
+  const [guide, setGuide] = useState(false);
 
   return html`<div class="screen settings">
     <${TopBar} title="Settings" />
@@ -491,6 +532,8 @@ export function Settings({ settings }) {
             <span class="avatar avatar--small">${initials(e.name)}</span>${e.name || 'Unnamed'}</button>`)}
         </div>
         <p class="hint">New jobs on this phone are put in this name.</p>
+        <${Toggle} label="This is the boss's phone" hint="Puts timesheets in, quotes and services due at the top of Home" checked=${isBoss(s)} onChange=${(v) => save({ ...s, isBoss: v })} />
+        <button class="link" onClick=${() => setGuide(true)}>How the app works, in a minute</button>
       </section>
 
       <section class="setblock">
@@ -539,9 +582,9 @@ export function Settings({ settings }) {
 
       <${YourLists} settings=${settings} />
 
-      <section class="setblock">
-        <h2 class="setblock__title">Backup</h2>
-        <p class="hint">Jobs are stored on this phone only. Send yourself a backup every week or so, and keep it somewhere safe like your email or Google Drive.</p>
+      <details class="setblock setblock--details">
+        <summary class="setblock__title">Advanced: backup, restore, export</summary>
+        <p class="hint">${isSyncOn() ? 'With team sync on, the team database holds a copy of everything. A backup file is still worth taking now and then.' : 'Jobs are stored on this phone only. Send yourself a backup every week or so, and keep it somewhere safe like your email or Google Drive.'}</p>
         <div class="setactions">
           <button class="setaction" onClick=${backup}><${Icon} name="upload" /><span><b>Back up everything</b><small>${stats ? `${stats.jobs} jobs` : ''}${mb ? `, ${mb} MB` : ''}</small></span></button>
           <button class="setaction" onClick=${() => restoreRef.current.click()}><${Icon} name="download" /><span><b>Restore from a backup</b><small>Also moves jobs to a new phone</small></span></button>
@@ -550,7 +593,8 @@ export function Settings({ settings }) {
         </div>
         <input type="file" accept="*/*" hidden ref=${restoreRef} onChange=${(e) => { restore(e.currentTarget.files); e.currentTarget.value = ''; }} />
         <input type="file" accept="*/*" hidden ref=${jobRef} onChange=${(e) => { importJobFromFiles(e.currentTarget.files, (j) => go('/job/' + j.id + '/send')); e.currentTarget.value = ''; }} />
-      </section>
+      </details>
+      <${Guide} open=${guide} onClose=${() => setGuide(false)} boss=${isBoss(s)} />
 
       <section class="setblock setblock--about">
         <img src="assets/logo.png" alt="Comfyair" width="120" />

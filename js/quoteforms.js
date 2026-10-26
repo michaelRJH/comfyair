@@ -58,7 +58,7 @@ export function PlacePhotos({ photos, onChange, model, label, wall, outdoorModel
 
 // ---------- indoor unit ----------
 
-function IndoorCard({ ind, i, sys, price, built, onChange, onRemove }) {
+function IndoorCard({ ind, i, sys, price, built, onChange, onRemove, quick }) {
   const [open, setOpen] = useState(true);
   const r = ind.room;
   const s = (k, v) => onChange({ ...ind, [k]: v });
@@ -103,7 +103,7 @@ function IndoorCard({ ind, i, sys, price, built, onChange, onRemove }) {
           ${options.map((u) => html`<option value=${u.id}>${u.make} ${u.model}, ${u.kwCool}kW (${u.tier})</option>`)}
         </select><${Icon} name="down" size=${18} class="inp__chev" /></span>
       </${Field}>
-      <${Input} label="Where it goes" value=${ind.spot} placeholder="e.g. High on the back wall, above the door" onChange=${(v) => s('spot', v)} wide />
+      ${!quick && html`<${Input} label="Where it goes" value=${ind.spot} placeholder="e.g. High on the back wall, above the door" onChange=${(v) => s('spot', v)} wide />`}
       <div class="grid2">
         <${Input} label="Pipe run to outdoor" value=${ind.pipeM} suffix="m" inputmode="decimal" onChange=${(v) => s('pipeM', v)} />
         <${Input} label="Trunking" value=${ind.trunkingM} suffix="m" inputmode="decimal" onChange=${(v) => s('trunkingM', v)} />
@@ -111,15 +111,15 @@ function IndoorCard({ ind, i, sys, price, built, onChange, onRemove }) {
         <${Input} label="Drain run" value=${ind.drainM} suffix="m" inputmode="decimal" onChange=${(v) => s('drainM', v)} />
       </div>
       <${Segmented} label="Condensate" options=${[{ value: 'gravity', label: 'Gravity drain' }, { value: 'pump', label: 'Pump' }]} value=${ind.drain} onChange=${(v) => s('drain', v)} />
-      <div class="toggles">
+      ${!quick && html`<div class="toggles">
         <${Toggle} label="Wi-Fi adaptor" checked=${ind.wifi} onChange=${(v) => s('wifi', v)} />
         <${Toggle} label="Wired controller" checked=${ind.controller} onChange=${(v) => s('controller', v)} />
-      </div>
-      <${Field} label="Photo the wall and place the unit" hint="Tap the four corners of the wall, then drag the unit. It's drawn at the real size for this room." wide group>
+      </div>`}
+      ${!quick && html`<${Field} label="Photo the wall and place the unit" hint="Tap the four corners of the wall, then drag the unit. It's drawn at the real size for this room." wide group>
         <${PlacePhotos} photos=${ind.photos || []} onChange=${(p) => s('photos', p)} model=${modelFor(chosen ? chosen.unit : { type: ind.unitType, kwCool: kw })} outdoorModel=${outdoorModelFor(kw)} label=${chosen ? `${chosen.unit.make} ${chosen.unit.model}` : ind.unitType} wall=${wall} />
-      </${Field}>
-      ${chosen && html`<${ARView} model=${modelFor(chosen.unit)} label=${`${chosen.unit.make} ${chosen.unit.model}`} />`}
-      <${TextArea} label="Notes" value=${ind.notes} rows=${2} placeholder="e.g. Cable route behind the units, listed building" onChange=${(v) => s('notes', v)} />
+      </${Field}>`}
+      ${!quick && chosen && html`<${ARView} model=${modelFor(chosen.unit)} label=${`${chosen.unit.make} ${chosen.unit.model}`} />`}
+      ${!quick && html`<${TextArea} label="Notes" value=${ind.notes} rows=${2} placeholder="e.g. Cable route behind the units, listed building" onChange=${(v) => s('notes', v)} />`}
       ${sys.indoors.length > 1 && html`<button type="button" class="btn btn--danger-ghost btn--small" onClick=${onRemove}><${Icon} name="trash" size=${18} /> Remove room</button>`}
     </div>`}
   </div>`;
@@ -175,7 +175,7 @@ function BuildUp({ sys, built, onChange, showCost }) {
 
 // ---------- a system ----------
 
-function SystemCard({ sys, i, n, price, tier, onChange, onRemove, showCost }) {
+function SystemCard({ sys, i, n, price, tier, onChange, onRemove, showCost, quick }) {
   const built = buildSystem(sys, tier, price);
   const s = (k, v) => onChange({ ...sys, [k]: v });
   const so = (k, v) => onChange({ ...sys, outdoor: { ...sys.outdoor, [k]: v } });
@@ -201,12 +201,16 @@ function SystemCard({ sys, i, n, price, tier, onChange, onRemove, showCost }) {
       <${Input} label="Pipe run" value=${sys.indoors[0] ? sys.indoors[0].pipeM : '6'} suffix="m" inputmode="decimal" onChange=${(v) => s('indoors', [{ ...(sys.indoors[0] || blankIndoor()), pipeM: v }])} />
     </div>` : html`
       <div class="stack">
-        ${sys.indoors.map((ind, j) => html`<${IndoorCard} key=${ind.id} ind=${ind} i=${j} sys=${sys} price=${price} built=${built}
+        ${sys.indoors.map((ind, j) => html`<${IndoorCard} key=${ind.id} ind=${ind} i=${j} sys=${sys} price=${price} built=${built} quick=${quick}
           onChange=${(ni) => s('indoors', sys.indoors.map((x) => (x.id === ind.id ? ni : x)))}
           onRemove=${() => s('indoors', sys.indoors.filter((x) => x.id !== ind.id))} />`)}
         ${(sys.kind === 'multi' || sys.indoors.length === 0) && html`<button type="button" class="addrow" onClick=${() => s('indoors', [...sys.indoors, blankIndoor()])}><${Icon} name="plus" size=${18} /> Add a room to this outdoor unit</button>`}
         ${sys.kind === 'multi' && built.capacity && html`<p class=${'warnline ' + (built.capacity.ok ? 'warnline--ok' : '')}><${Icon} name=${built.capacity.ok ? 'check' : 'alert'} size=${18} /> ${built.capacity.text}</p>`}
       </div>
+      ${quick ? html`<div class="toggles">
+        <${Toggle} label="Remove old unit" checked=${sys.outdoor.disposal} onChange=${(v) => so('disposal', v)} />
+        <${Toggle} label="New electrical circuit" checked=${sys.outdoor.supply === 'circuit'} onChange=${(v) => so('supply', v ? 'circuit' : 'spur')} />
+      </div>` : html`
       <div class="subhead">Outdoor unit</div>
       ${sys.kind === 'multi' && html`<${Field} label="Which outdoor unit">
         <span class="inp inp--select"><select value=${sys.outdoor.pick} onChange=${(e) => so('pick', e.currentTarget.value)} aria-label="Outdoor unit">
@@ -227,8 +231,9 @@ function SystemCard({ sys, i, n, price, tier, onChange, onRemove, showCost }) {
       <${Input} label="Cable run" value=${sys.outdoor.cableM} suffix="m" inputmode="decimal" onChange=${(v) => so('cableM', v)} />
       <${Field} label="Photo where the outdoor unit goes" wide group>
         <${PlacePhotos} photos=${sys.outdoor.photos || []} onChange=${(p) => so('photos', p)} model=${outUnit && outUnit.unit.kw ? outdoorModelFor(outUnit.unit.kw) : outdoorModelFor(totalKw)} label="Outdoor unit" wall=${{ w: 4, h: 2.4 }} />
-      </${Field}>
+      </${Field}>`}
     `}
+    ${!quick && html`
     <div class="subhead">Access and labour</div>
     <${Segmented} label="Access equipment" small options=${[{ value: 'none', label: 'Ladders' }, { value: 'tower', label: 'Tower' }, { value: 'scaffold', label: 'Scaffold' }, { value: 'mewp', label: 'MEWP' }]} value=${sys.access.kind} onChange=${(v) => s('access', { ...sys.access, kind: v })} />
     ${(sys.access.kind === 'tower' || sys.access.kind === 'mewp') && html`<${Input} label="Days" value=${sys.access.days} inputmode="numeric" onChange=${(v) => s('access', { ...sys.access, days: v })} />`}
@@ -237,7 +242,7 @@ function SystemCard({ sys, i, n, price, tier, onChange, onRemove, showCost }) {
       <${Input} label="Engineers" value=${sys.engineers} placeholder=${String(built.engineers)} inputmode="numeric" onChange=${(v) => s('engineers', v.replace(/\D/g, ''))} />
     </div>
     <div class="subhead">Build-up (${TIERS.find((t) => t.id === tier).label} option)</div>
-    <${BuildUp} sys=${sys} built=${built} onChange=${onChange} showCost=${showCost} />
+    <${BuildUp} sys=${sys} built=${built} onChange=${onChange} showCost=${showCost} />`}
   </div>`;
 }
 
@@ -393,7 +398,7 @@ export function quoteSections(job, { set, patch, settings }) {
       </div>`,
     },
     { id: 'client', nav: 'Client', title: 'Client and site', body: html`<${ClientSite} job=${job} onChange=${patch} />` },
-    {
+    q.quick ? { id: 'survey', nav: 'Summary', title: 'Summary', body: html`<${TextArea} label="One line for the customer" value=${q.summary} rows=${2} placeholder="e.g. Wall-mounted unit in the living room, outdoor on the side wall." onChange=${(v) => sq('summary', v)} />` } : {
       id: 'survey', nav: 'Survey', title: 'Survey',
       body: html`<div class="stack">
         <${TextArea} label="Summary for the customer" value=${q.summary} rows=${3} placeholder="Two or three lines in plain English about what you're proposing and why." onChange=${(v) => sq('summary', v)} />
@@ -410,7 +415,8 @@ export function quoteSections(job, { set, patch, settings }) {
     id: 'systems', nav: 'Systems', title: 'Systems',
     aside: html`<span class="count">${q.systems.length}</span>`,
     body: html`<div class="stack">
-      ${q.systems.map((sys, i) => html`<${SystemCard} key=${sys.id} sys=${sys} i=${i} n=${q.systems.length} price=${price} tier=${q.recommended} showCost=${showCost}
+      ${q.quick && html`<p class="hint">Quick price: just the room and the basics. <button class="link link--small" onClick=${() => sq('quick', false)}>Firm it up</button> for photos, outdoor unit, electrics and the full build-up.</p>`}
+      ${q.systems.map((sys, i) => html`<${SystemCard} key=${sys.id} sys=${sys} i=${i} n=${q.systems.length} price=${price} tier=${q.recommended} showCost=${showCost} quick=${!!q.quick}
         onChange=${(ns) => sq('systems', q.systems.map((x) => (x.id === sys.id ? ns : x)))}
         onRemove=${async () => { if (await ask({ title: `Remove ${sys.name || 'this system'}?`, ok: 'Remove', danger: true })) sq('systems', q.systems.filter((x) => x.id !== sys.id)); }} />`)}
       <button type="button" class="addrow addrow--big" onClick=${() => sq('systems', [...q.systems, blankSystem('split')])}><${Icon} name="plus" size=${20} /> Add another system</button>
@@ -464,7 +470,7 @@ export function checkQuote(job) {
       if (s.kind === 'cold' && !(parseFloat(s.cold.kw) > 0)) w.push('Cold room has no cooling duty');
       s.indoors.forEach((i) => { if (!(roomKw(i.room) > 0)) w.push(`${i.room.name || 'A room'} has no size yet`); });
     });
-    if (!q.systems.some((s) => s.indoors.some((i) => (i.photos || []).some((p) => p.overlayUrl)) || (s.outdoor.photos || []).some((p) => p.overlayUrl))) w.push('No photo with a unit placed on it');
+    if (!q.quick && !q.systems.some((s) => s.indoors.some((i) => (i.photos || []).some((p) => p.overlayUrl)) || (s.outdoor.photos || []).some((p) => p.overlayUrl))) w.push('No photo with a unit placed on it');
   }
   if (q.kind === 'service' && !(q.service && q.service.units.length)) w.push('No units on the contract');
   if (q.kind === 'works' && !(q.works && q.works.lines.some((l) => l.label))) w.push('No lines on the quote');

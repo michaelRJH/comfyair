@@ -108,7 +108,7 @@ export async function flush() {
         await fetchJ(`deleted/${item.store}/${encodeURIComponent(item.id)}.json`, { method: 'PUT', body: JSON.stringify({ at: Date.now(), by: deviceId }) });
       } else {
         const row = await db.get(item.store, item.id);
-        if (row) await fetchJ(`${item.store}/${encodeURIComponent(item.id)}.json`, { method: 'PUT', body: JSON.stringify({ ...row, updatedAt: Date.now(), syncBy: deviceId, syncAt: Date.now() }) });
+        if (row) { const up = { ...row, updatedAt: Date.now(), syncBy: deviceId, syncAt: Date.now() }; delete up.arrivedAt; await fetchJ(`${item.store}/${encodeURIComponent(item.id)}.json`, { method: 'PUT', body: JSON.stringify(up) }); }
       }
       outbox.delete(key);
       state.lastPush = Date.now(); state.error = '';
@@ -140,7 +140,7 @@ export async function reconcile() {
         const row = await fetchJ(`${store}/${encodeURIComponent(id)}.json`);
         if (!row || !row.id) continue;
         applying = true;
-        try { const clean = clone(row); delete clean.syncBy; delete clean.syncAt; await db.put(store, clean); fetched++; } finally { applying = false; }
+        try { const clean = clone(row); delete clean.syncBy; delete clean.syncAt; if (store === 'jobs') clean.arrivedAt = Date.now(); await db.put(store, clean); fetched++; } finally { applying = false; }
       }
     }
     state.teamCounts = counts; state.error = '';
@@ -169,6 +169,7 @@ export async function pullNow() {
           const local = await db.get(store, row.id);
           if (local && (local.updatedAt || 0) >= (row.updatedAt || 0)) continue;
           const clean = clone(row); delete clean.syncBy; delete clean.syncAt;
+          if (store === 'jobs' && !local) clean.arrivedAt = Date.now();
           await db.put(store, clean);
           changed++;
         }
@@ -220,3 +221,12 @@ export const RULES_JSON = `{
     }
   }
 }`;
+
+// ---------- what's new on this phone since the Jobs screen was last opened ----------
+export async function newArrivals() {
+  const seen = ((await db.get('kv', 'seenJobs')) || {}).at || 0;
+  const jobs = await db.all('jobs');
+  return jobs.filter((j) => (j.arrivedAt || 0) > seen).length;
+}
+export const markJobsSeen = () => db.put('kv', { at: Date.now() }, 'seenJobs');
+export const seenJobsAt = async () => ((await db.get('kv', 'seenJobs')) || {}).at || 0;

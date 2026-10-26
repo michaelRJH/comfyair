@@ -11,7 +11,7 @@ import { TimeScreen } from './timescreen.js';
 import { SendTimesheet } from './senddoc.js';
 import { ComfyPopup, useComfyOnce } from './mascot.js';
 import { firstName } from './util.js';
-import { configureSync } from './sync.js';
+import { configureSync, onSync, newArrivals } from './sync.js';
 
 const TABS = [
   { path: '/', label: 'Home', icon: 'home' },
@@ -22,6 +22,8 @@ const TABS = [
 ];
 
 function BottomNav({ path }) {
+  const [fresh, setFresh] = useState(0);
+  useEffect(() => { const refresh = () => newArrivals().then(setFresh); refresh(); return onSync(refresh); }, [path]);
   const active = path === '/' ? '/' : '/' + path.split('/')[1];
   const map = { '/site': '/sites', '/job': '/jobs', '/timesheet': '/time' };
   const cur = map[active] || active;
@@ -29,6 +31,7 @@ function BottomNav({ path }) {
     ${TABS.map((t) => html`<button class=${'tabbar__btn' + (cur === t.path ? ' is-on' : '')} aria-current=${cur === t.path ? 'page' : undefined}
       onClick=${() => go(t.path, null, cur === t.path)}>
       <${Icon} name=${t.icon} size=${23} stroke=${cur === t.path ? 2.1 : 1.75} />
+      ${t.path === '/jobs' && fresh > 0 && html`<span class="tabbar__badge">${fresh}</span>`}
       <span>${t.label}</span>
     </button>`)}
   </nav>`;
