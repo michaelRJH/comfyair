@@ -214,7 +214,7 @@ export function Send({ id, done, settings }) {
         if (!cancelled) setPages(n);
       } catch (e) {
         console.error(e);
-        if (!cancelled) setErr('The PDF could not be made. Check you have signal for the first use, then try again.');
+        if (!cancelled) setErr(`The PDF could not be made. Check you have signal for the first use, then try again. (${(e && e.message) || e}${e && e.stack ? ' @ ' + String(e.stack).split('\n')[1]?.trim() : ''})`);
       }
     })();
     return () => { cancelled = true; };
